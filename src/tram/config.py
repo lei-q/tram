@@ -37,10 +37,19 @@ DEFAULT_KNOWLEDGE_AREAS: dict[str, AreaLevel] = {
 }
 
 
+class EvmThresholds(BaseModel):
+    """度量即仪表：SPI/CPI 越界即升级（自动入风险册）。"""
+
+    spi_min: float = 0.85
+    spi_max: float = 1.15
+    cpi_min: float = 0.9
+
+
 class TramConfig(BaseModel):
     project_name: str
     sandbox: SandboxMode = SandboxMode.WORKTREE
     policy_engine: PolicyEngineKind = PolicyEngineKind.AUTO
+    evm_thresholds: EvmThresholds = Field(default_factory=EvmThresholds)
     knowledge_areas: dict[str, AreaLevel] = Field(
         default_factory=lambda: dict(DEFAULT_KNOWLEDGE_AREAS)
     )

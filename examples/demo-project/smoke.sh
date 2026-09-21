@@ -52,6 +52,17 @@ tram cr reject cr-0001 --by "$USER" --note "out of scope, do not merge"
 echo "==> quality gate again (expect PASS: CR closed)"
 tram gate run g2_quality_gate
 
+echo "==> EVM: the blocked T-001 burns 8 points for nothing (expect SPI/CPI breach + risks)"
+tram task points T-001 --est 8 --spent 8
+tram evm snapshot
+tram evm show
+
+echo "==> KPI dashboard (gate MTTR + rework rate)"
+tram kpi
+
+echo "==> regenerate the risk register (now carries the EVM risks)"
+tram artifact generate risk_register
+
 echo "==> project status"
 tram status
 

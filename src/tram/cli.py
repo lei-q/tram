@@ -19,6 +19,14 @@ from tram.context import TramContext, init_project, load_context
 from tram.cr_store import CRStore
 from tram.governance.gate_runner import GateRunner
 from tram.governance.intent_guard import IntentGuard
+from tram.metrics.evm import (
+    compute_snapshot,
+    escalate_breaches,
+    evaluate_thresholds,
+    latest_snapshot,
+    save_snapshot,
+)
+from tram.metrics.kpis import mttr_report, rework_report
 from tram.models.cr import Approval, CRStatus, CRType
 from tram.models.events import EventKind
 from tram.models.gates import GateStatus
@@ -32,12 +40,16 @@ guard_app = typer.Typer(help="intent guard: changes vs scope baseline", no_args_
 agent_app = typer.Typer(help="run coding-agent tasks inside the sandbox", no_args_is_help=True)
 cr_app = typer.Typer(help="change requests", no_args_is_help=True)
 artifact_app = typer.Typer(help="governance artifacts (tickets)", no_args_is_help=True)
+task_app = typer.Typer(help="task records (EVM data source)", no_args_is_help=True)
+evm_app = typer.Typer(help="earned value management (SPI/CPI)", no_args_is_help=True)
 app.add_typer(baseline_app, name="baseline")
 app.add_typer(gate_app, name="gate")
 app.add_typer(guard_app, name="guard")
 app.add_typer(agent_app, name="agent")
 app.add_typer(cr_app, name="cr")
 app.add_typer(artifact_app, name="artifact")
+app.add_typer(task_app, name="task")
+app.add_typer(evm_app, name="evm")
 
 console = Console()
 COMMIT_TRAILER = "Co-Authored-By: Claude Code <noreply@anthropic.com>"
@@ -113,6 +125,11 @@ def status() -> None:
         a.kind == "scope_baseline" and a.decision == "approved" for a in state.human_approvals
     )
     table.add_row("scope baseline", "approved ✅" if approved else "awaiting human approval ⏳")
+    snap = latest_snapshot(ctx)
+    if snap is not None:
+        breaches = evaluate_thresholds(snap, ctx.config.evm_thresholds)
+        mark = f" ⚠ {'; '.join(breaches)}" if breaches else " ✅"
+        table.add_row("evm (latest)", f"{snap.date} SPI={snap.spi} CPI={snap.cpi}{mark}")
     console.print(table)
 
 
@@ -253,6 +270,9 @@ def agent_run(
         str | None, typer.Option(help="comma-separated tool allowlist")
     ] = None,
     max_turns: Annotated[int | None, typer.Option(help="agent turn limit")] = None,
+    points: Annotated[
+        float | None, typer.Option(help="story-point estimate for this task (EVM)")
+    ] = None,
 ) -> None:
     """Run one agent task in a worktree sandbox, guarded by Intent Guard."""
     try:
@@ -280,7 +300,12 @@ def agent_run(
         allowed_tools=allowed_tools.split(",") if allowed_tools else [],
         max_turns=max_turns,
     )
-    record = TaskRecord(id=task_id, title=prompt.splitlines()[0][:80], status=TaskStatus.DOING)
+    record = TaskRecord(
+        id=task_id,
+        title=prompt.splitlines()[0][:80],
+        status=TaskStatus.DOING,
+        est_points=points if points is not None else 1.0,
+    )
     state.tasks.append(record)
     ctx.state_store.save(state)
     ctx.events.append(
@@ -338,6 +363,7 @@ def agent_run(
             if changed:
                 sha = session.commit_all(f"tram {task_id}: {record.title}\n\n{COMMIT_TRAILER}")
                 record.status = TaskStatus.DONE
+                record.spent_points = record.est_points
                 record.commit_refs.append(sha or "")
                 ctx.state_store.save(state)
                 ctx.events.append(
@@ -352,6 +378,7 @@ def agent_run(
                 )
             else:
                 record.status = TaskStatus.DONE
+                record.spent_points = record.est_points
                 ctx.state_store.save(state)
                 ctx.events.append(
                     EventKind.AGENT_RUN_FINISHED,
@@ -526,6 +553,187 @@ def artifact_generate(
             console.print(f"[green]{kind} ✅ {artifact.path}[/green]")
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
+
+
+@task_app.command("list")
+def task_list() -> None:
+    """List task records with points and rework counters."""
+    try:
+        ctx = load_context()
+        state = ctx.load_state()
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    if not state.tasks:
+        console.print("[dim]no tasks - tasks appear after `tram agent run`[/dim]")
+        return
+    table = Table(title="📋 tasks")
+    table.add_column("id")
+    table.add_column("status")
+    table.add_column("est", justify="right")
+    table.add_column("spent", justify="right")
+    table.add_column("rework", justify="right")
+    table.add_column("title", overflow="fold")
+    for t in state.tasks:
+        table.add_row(
+            t.id,
+            t.status.value,
+            str(t.est_points),
+            str(t.spent_points),
+            str(t.rework_count),
+            t.title,
+        )
+    console.print(table)
+
+
+@task_app.command("points")
+def task_points(
+    task_id: Annotated[str, typer.Argument(help="e.g. T-001")],
+    est: Annotated[float | None, typer.Option(help="estimate (story points)")] = None,
+    spent: Annotated[float | None, typer.Option(help="actually spent points")] = None,
+) -> None:
+    """Set planned/actual points on a task (the EVM data source)."""
+    try:
+        ctx = load_context()
+        state = ctx.load_state()
+        record = state.task(task_id)
+        if record is None:
+            raise ValueError(f"unknown task: {task_id} (see `tram task list`)")
+        if est is None and spent is None:
+            raise ValueError("nothing to update: pass --est and/or --spent")
+        if est is not None:
+            record.est_points = est
+        if spent is not None:
+            record.spent_points = spent
+        ctx.state_store.save(state)
+        ctx.events.append(
+            EventKind.TASK_UPDATED,
+            source="tram.task",
+            data={
+                "task": task_id,
+                "est_points": record.est_points,
+                "spent_points": record.spent_points,
+                "status": record.status.value,
+            },
+            refs={"task": task_id},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print(
+        f"[green]task {task_id}: est={record.est_points} spent={record.spent_points} ✅[/green]"
+    )
+
+
+def _evm_table(snap) -> Table:
+    table = Table(title=f"📊 EVM snapshot {snap.date.isoformat()}")
+    table.add_column("metric")
+    table.add_column("value", overflow="fold")
+    table.add_row("PV / EV / AC", f"{snap.pv} / {snap.ev} / {snap.ac}")
+    table.add_row("SPI (进度)", str(snap.spi))
+    table.add_row("CPI (成本)", str(snap.cpi))
+    table.add_row("SV / CV", f"{snap.sv} / {snap.cv}")
+    return table
+
+
+@evm_app.command("snapshot")
+def evm_snapshot(
+    day: Annotated[
+        str | None, typer.Option(help="snapshot date YYYY-MM-DD (default: today)")
+    ] = None,
+) -> None:
+    """Compute an EVM snapshot; threshold breaches auto-register risks (HITL-free)."""
+    try:
+        snap_day = dt.date.fromisoformat(day) if day else None
+        ctx = load_context()
+        state = ctx.load_state()
+        snap = compute_snapshot(state, snap_day)
+        path = save_snapshot(ctx, snap)
+        event = ctx.events.append(
+            EventKind.EVM_SNAPSHOT, source="tram.evm", data=snap.model_dump(mode="json")
+        )
+        reasons = evaluate_thresholds(snap, ctx.config.evm_thresholds)
+        new_risks = []
+        if reasons:
+            existing = {r.id for r in state.risks}
+            for risk in escalate_breaches(snap, reasons, trigger_seq=event.seq):
+                if risk.id not in existing:
+                    state.risks.append(risk)
+                    new_risks.append(risk)
+            if new_risks:
+                ctx.state_store.save(state)
+                for risk in new_risks:
+                    ctx.events.append(
+                        EventKind.RISK_REGISTERED,
+                        source="tram.evm",
+                        data={"risk": risk.id, "description": risk.description},
+                        refs={"risk": risk.id, "event": str(event.seq)},
+                    )
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print(_evm_table(snap))
+    console.print(f"[dim]saved: {path}[/dim]")
+    for reason in reasons:
+        console.print(f"  [red]⚠ {reason}[/red]")
+    for risk in new_risks:
+        console.print(f"  [yellow]risk registered: {risk.id}[/yellow]")
+    if not reasons:
+        console.print("[green]within thresholds ✅[/green]")
+
+
+@evm_app.command("show")
+def evm_show() -> None:
+    """Show the latest EVM snapshot."""
+    try:
+        ctx = load_context()
+        snap = latest_snapshot(ctx)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    if snap is None:
+        console.print("[dim]no snapshots yet - run `tram evm snapshot`[/dim]")
+        return
+    console.print(_evm_table(snap))
+    breaches = evaluate_thresholds(snap, ctx.config.evm_thresholds)
+    for reason in breaches:
+        console.print(f"  [red]⚠ {reason}[/red]")
+    if not breaches:
+        console.print("[green]within thresholds ✅[/green]")
+
+
+@app.command()
+def kpi() -> None:
+    """KPI dashboard: gate MTTR + rework rate (computed from the black box)."""
+    try:
+        ctx = load_context()
+        state = ctx.load_state()
+        report = mttr_report(list(ctx.events.read()))
+        rework = rework_report(state)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    table = Table(title="📈 KPI dashboard")
+    table.add_column("metric")
+    table.add_column("value", overflow="fold")
+    if report.gates or report.open_breaches:
+        overall = f"{report.overall_mttr_seconds}s" if report.overall_mttr_seconds else "n/a"
+        table.add_row("MTTR (all gates)", overall)
+        for m in report.gates:
+            table.add_row(f"  {m.gate_id}", f"MTTR {m.mttr_seconds}s ({m.breaches} breach(es))")
+        for gate_id in report.open_breaches:
+            table.add_row(f"  {gate_id}", "still red, not yet recovered ⏳")
+    else:
+        table.add_row("MTTR", "[dim]no gate breaches recorded[/dim]")
+    if rework.tasks_done:
+        table.add_row(
+            "rework rate",
+            f"{rework.rate:.1%} ({rework.tasks_with_rework}/{rework.tasks_done} done,"
+            f" {rework.rework_events} rework event(s))",
+        )
+    else:
+        table.add_row("rework rate", "[dim]no done tasks yet[/dim]")
+    console.print(table)
 
 
 @app.command()

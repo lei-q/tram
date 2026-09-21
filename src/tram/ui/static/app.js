@@ -89,6 +89,10 @@ function setSignal(gateId, status) {
 
 /* ---------- 渲染 ---------- */
 
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
 function phaseLabel(id) {
   const p = PHASES.find((x) => x.id === id);
   return p ? p.label : id;
@@ -120,13 +124,24 @@ function renderState(state) {
 
   const gauges = document.getElementById("gauges");
   const t = state.tasks;
+  const evm = state.evm;
+  let evmGauge;
+  if (evm) {
+    const breaches = evm.breaches || [];
+    const cls = breaches.length ? "chip--fail" : "chip--ok";
+    const tip = breaches.length ? ` title="${esc(breaches.join("；"))}"` : "";
+    const lbl = breaches.length ? `⚠ EVM 越界 · ${evm.date}` : `EVM 正常 · ${evm.date}`;
+    evmGauge = `<div class="gauge ${cls}"${tip}><div class="num">SPI ${evm.spi} · CPI ${evm.cpi}</div><div class="lbl">${lbl}</div></div>`;
+  } else {
+    evmGauge = '<div class="gauge gauge--dim"><div class="num">SPI·CPI</div><div class="lbl">EVM · 等 `tram evm snapshot`</div></div>';
+  }
   gauges.innerHTML = `
     <div class="gauge"><div class="num">${t.done}/${t.total}</div><div class="lbl">任务完成</div></div>
     <div class="gauge"><div class="num">${t.points_done}/${t.points_total}</div><div class="lbl">故事点</div></div>
     <div class="gauge ${state.open_crs.length ? "chip--fail" : ""}"><div class="num">${state.open_crs.length}</div><div class="lbl">进行中 CR</div></div>
     <div class="gauge"><div class="num">${state.events_count}</div><div class="lbl">事件（黑匣子）</div></div>
     <div class="gauge"><div class="num">${state.last_gate ? state.last_gate.id.replace("_", " ") : "—"}</div><div class="lbl">最近门禁</div></div>
-    <div class="gauge gauge--dim"><div class="num">SPI·CPI</div><div class="lbl">EVM · Phase 2 供电</div></div>
+    ${evmGauge}
   `;
 
   const list = document.getElementById("cr-list");

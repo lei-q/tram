@@ -79,15 +79,17 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **U1–U3 实现说明（对 D8 的偏差）**：薄版采用无构建 vanilla JS + SVG，而非 React+Vite——零 Node 工具链、静态资源直接进 wheel、`tram ui` 完全离线。设计 token 独立于 tokens.css，Phase 2 React 版直接复用该文件与全部视觉规范。
 
-验证：`ruff check` 全绿；pytest 59 passed + 1 skipped（OPA 对比测试，CI 有 OPA 时运行）；smoke.sh 全流程真人可见；`tram ui` 实测 serve 页面 / state / artifacts / SSE 均正常。
+验证：`ruff check` 全绿；pytest 75 passed + 1 skipped（OPA 对比测试，CI 有 OPA 时运行）；smoke.sh 全流程真人可见（含 EVM 越界入险 + KPI 仪表）；`tram ui` 实测 serve 页面 / state / artifacts / SSE 均正常。
 
 ## 7. UI 设计基调（D7/D8 已确认）
 
 「把治理过程画成一张有轨电车线路图」：过程组=5 站，电车位置=当前阶段，信号灯=门禁（绿过/红阻/橙待人审），工件=车票（证据=打孔，缺孔=虚线 evidence-gap），CR=绕行支线，SPI/CPI=司机仪表盘，事件回放=行车记录仪。视觉：米纸底 #FAF6EE + 五站马卡龙色（杏黄/薄荷/雾蓝/淡藤/藕粉），圆头粗轨道线，贴纸徽章，克制动效，`prefers-reduced-motion` 全程尊重。吉祥物 Trammy 只出现在空态/引导/庆祝。原则：隐喻唯一、红灯必须红得清楚、证据可见、UI 无任何绕过门禁的按钮（审批也写事件流）。
 
-## 8. Phase 2 预告（约 3 周）
+## 8. Phase 2 进展与预告
 
-EVM 引擎与 SPI/CPI 越界升级；QA 复现-修复闭环 + MTTR；PM/QA/Dev 提示词分离；风险自动入册；返工率/逃逸率统计；UI 完整版（车票夹/调度日志/变更支线/风险气象台/站台审批）。
+**已完成（第一批）**：EVM 引擎（`tram metrics/evm.py`，PV=Σest / EV=done 的 est / AC=Σspent，纯确定性）；`tram task points` / `tram agent run --points`（完成任务自动 spent=est）；`tram evm snapshot|show`（快照落 `.tram/artifacts/evm/`，阈值 spi∈[0.85,1.15]、cpi≥0.9 可配，越界即自动入风险册 `r-evm-<日期>-<指标>`，同日重跑幂等，trigger 指向 EVM 事件 seq）；`tram kpi`（门禁 MTTR=同门禁 fail/blocked→下次 pass 的时长，返工率=有返工的完成任务/完成任务，均从黑匣子与 state 确定性计算）；UI 仪表盘通电（/api/state 增 `evm` 字段，SPI/CPI 仪表盘实时显示，越界红色告警）；`tram status` 增 EVM 行。
+
+**待做**：QA 复现-修复闭环（MTTR 回路闭合 + rework_count 维护）；PM/QA/Dev 提示词分离；返工率/逃逸率统计接入真实闭环；UI 完整版（车票夹/调度日志/变更支线/风险气象台/站台审批）；LangGraph 包装（T1.10）；docker 沙箱。
 
 ## 9. 风险登记（项目自身）
 

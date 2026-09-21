@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance.gate_runner import load_gate_specs
+from tram.metrics.evm import evaluate_thresholds, latest_snapshot
 from tram.models.artifacts import Artifact
 from tram.models.events import TramEvent
 from tram.models.gates import GateResult
@@ -33,6 +34,9 @@ REFRESH_KINDS = {
     "agent_run_finished",
     "artifact_generated",
     "human_decision",
+    "evm_snapshot",
+    "risk_registered",
+    "task_updated",
 }
 
 
@@ -49,12 +53,26 @@ def create_app(repo: Path | None = None) -> FastAPI:
         gates_file = ctx.gates_file if ctx.gates_file.exists() else None
         specs = load_gate_specs(gates_file or ctx.packaged_policies / "gates.yaml")
         crs = CRStore(ctx.crs_dir).open_crs()
+        snap = latest_snapshot(ctx)
         return {
             "project_name": state.project_name,
             "phase": state.phase.value,
             "sandbox": ctx.config.sandbox.value,
             "policy_engine": ctx.config.policy_engine.value,
             "events_count": ctx.events.count(),
+            "evm": (
+                {
+                    "date": snap.date.isoformat(),
+                    "pv": snap.pv,
+                    "ev": snap.ev,
+                    "ac": snap.ac,
+                    "spi": snap.spi,
+                    "cpi": snap.cpi,
+                    "breaches": evaluate_thresholds(snap, ctx.config.evm_thresholds),
+                }
+                if snap
+                else None
+            ),
             "scope_approved": any(
                 a.kind == "scope_baseline" and a.decision == "approved"
                 for a in state.human_approvals

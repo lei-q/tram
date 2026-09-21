@@ -33,6 +33,29 @@ def test_state_reflects_baseline_approval(ctx, git_repo, monkeypatch):
     assert data["scope_approved"] is True
 
 
+def test_state_includes_evm_snapshot(ctx, git_repo):
+    from datetime import date
+
+    from tram.metrics.evm import compute_snapshot, save_snapshot
+    from tram.models.task import TaskRecord, TaskStatus
+
+    client = _client(git_repo)
+    assert client.get("/api/state").json()["evm"] is None
+
+    state = ctx.load_state()
+    state.tasks.append(
+        TaskRecord(id="T-001", title="a", status=TaskStatus.DONE, est_points=4, spent_points=5)
+    )
+    ctx.state_store.save(state)
+    save_snapshot(ctx, compute_snapshot(state, day=date(2026, 9, 21)))
+
+    evm = client.get("/api/state").json()["evm"]
+    assert evm["date"] == "2026-09-21"
+    assert evm["spi"] == 1.0
+    assert evm["cpi"] == 0.8
+    assert len(evm["breaches"]) == 1 and "CPI" in evm["breaches"][0]
+
+
 def test_artifacts_endpoint_empty_then_filled(ctx, git_repo):
     client = _client(git_repo)
     assert client.get("/api/artifacts").json() == []

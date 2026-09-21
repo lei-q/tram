@@ -21,6 +21,8 @@ class EventKind(enum.StrEnum):
     ARTIFACT_GENERATED = "artifact_generated"
     HUMAN_DECISION = "human_decision"
     EVM_SNAPSHOT = "evm_snapshot"
+    RISK_REGISTERED = "risk_registered"
+    TASK_UPDATED = "task_updated"
 
 
 class TramEvent(BaseModel):

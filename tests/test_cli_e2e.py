@@ -188,3 +188,28 @@ def test_full_governance_slice(git_repo, monkeypatch):
     assert result.exit_code == 0
     assert "agent_run_finished" in result.output
     assert "cr_status_changed" in result.output
+
+    # 9. EVM: inflate T-001 (blocked, earns nothing) -> SPI/CPI breach -> auto risks
+    result = runner.invoke(app, ["task", "points", "T-001", "--est", "8", "--spent", "8"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(app, ["evm", "snapshot"])
+    assert result.exit_code == 0, result.output
+    assert "risk registered" in result.output
+
+    state = ProjectState.model_validate(
+        json.loads((git_repo / ".tram" / "state.json").read_text(encoding="utf-8"))
+    )
+    from datetime import date as _date
+
+    today = _date.today().isoformat()
+    assert {r.id for r in state.risks} == {f"r-evm-{today}-spi", f"r-evm-{today}-cpi"}
+
+    # 10. KPI dashboard: the step-3/step-7 gate failures closed by later passes
+    result = runner.invoke(app, ["kpi"], env={"COLUMNS": "220"})
+    assert result.exit_code == 0, result.output
+    assert "MTTR" in result.output
+    assert "breach" in result.output
+
+    result = runner.invoke(app, ["status"], env={"COLUMNS": "220"})
+    assert result.exit_code == 0
+    assert "evm (latest)" in result.output
