@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -796,7 +797,18 @@ def ui(
     uvicorn.run(create_app(repo), host=host, port=port, log_level="warning")
 
 
+def _force_utf8_stdio() -> None:
+    """Windows 控制台默认 charmap 编码遇到 emoji 会 UnicodeEncodeError；
+    统一 UTF-8 并把不可编码字符降级为替换符，保证永不因输出崩溃。"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):  # non-standard streams in tests/embedders
+            pass
+
+
 def main() -> None:
+    _force_utf8_stdio()
     app()
 
 
