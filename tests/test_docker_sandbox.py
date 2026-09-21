@@ -45,9 +45,7 @@ def _image_local(image: str) -> bool:
     """活体测试要求镜像已在本地（--pull never 不会偷偷拉）。"""
     if shutil.which("docker") is None:
         return False
-    proc = subprocess.run(
-        ["docker", "image", "inspect", image], capture_output=True, timeout=15
-    )
+    proc = subprocess.run(["docker", "image", "inspect", image], capture_output=True, timeout=15)
     return proc.returncode == 0
 
 
