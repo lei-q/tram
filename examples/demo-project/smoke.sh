@@ -22,6 +22,14 @@ tram init --name demo
 echo "==> human approves the scope baseline (HITL)"
 tram baseline approve --by "$USER"
 
+echo "==> generate charter, pass G0 (initiating -> planning)"
+tram artifact generate charter
+tram gate run g0_charter_gate
+
+echo "==> generate all artifacts, pass G1 (planning -> executing)"
+tram artifact generate --all
+tram gate run g1_planning_gate
+
 echo "==> agent task with an out-of-scope write (expect INTENT BLOCKED + CR)"
 tram agent run --runner fake \
   --prompt "add mul" \

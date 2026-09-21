@@ -31,11 +31,13 @@ gate_app = typer.Typer(help="run phase gates", no_args_is_help=True)
 guard_app = typer.Typer(help="intent guard: changes vs scope baseline", no_args_is_help=True)
 agent_app = typer.Typer(help="run coding-agent tasks inside the sandbox", no_args_is_help=True)
 cr_app = typer.Typer(help="change requests", no_args_is_help=True)
+artifact_app = typer.Typer(help="governance artifacts (tickets)", no_args_is_help=True)
 app.add_typer(baseline_app, name="baseline")
 app.add_typer(gate_app, name="gate")
 app.add_typer(guard_app, name="guard")
 app.add_typer(agent_app, name="agent")
 app.add_typer(cr_app, name="cr")
+app.add_typer(artifact_app, name="artifact")
 
 console = Console()
 COMMIT_TRAILER = "Co-Authored-By: Claude Code <noreply@anthropic.com>"
@@ -467,6 +469,65 @@ def _decide_cr(cr_id: str, decision: str, by: str, note: str) -> None:
     console.print(f"[green]cr {cr_id} -> {cr.status.value} ✅[/green]")
 
 
+@artifact_app.command("list")
+def artifact_list() -> None:
+    """List registered artifacts and their evidence status."""
+    try:
+        ctx = load_context()
+        if ctx.artifacts_index.exists():
+            import json as _json
+
+            from tram.models.artifacts import Artifact
+
+            items = [
+                Artifact.model_validate(obj)
+                for obj in _json.loads(ctx.artifacts_index.read_text(encoding="utf-8"))
+            ]
+        else:
+            items = []
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    table = Table(title="🎫 artifacts")
+    table.add_column("kind")
+    table.add_column("path")
+    table.add_column("evidence")
+    for item in items:
+        verified = sum(1 for e in item.evidence if e.verified)
+        mark = "✅" if item.verified else ("⚠ gap" if not item.has_evidence else "⚠ unverified")
+        table.add_row(item.kind, item.path, f"{verified}/{len(item.evidence)} {mark}")
+    if not items:
+        console.print("[dim]no artifacts - try `tram artifact generate --all`[/dim]")
+        return
+    console.print(table)
+
+
+@artifact_app.command("generate")
+def artifact_generate(
+    kinds: Annotated[list[str] | None, typer.Argument(help="artifact kinds")] = None,
+    all_: Annotated[bool, typer.Option("--all", help="generate all known kinds")] = False,
+) -> None:
+    """Generate evidence-linked project artifacts (deterministic render)."""
+    from tram.artifacts.generator import ARTIFACT_KINDS, ArtifactGenerator
+
+    try:
+        ctx = load_context()
+        if all_:
+            kinds = list(ARTIFACT_KINDS)
+        kinds = kinds or []
+        unknown = [k for k in kinds if k not in ARTIFACT_KINDS]
+        if unknown:
+            raise ValueError(f"unknown kinds: {unknown}; known: {', '.join(ARTIFACT_KINDS)}")
+        if not kinds:
+            raise ValueError("nothing to generate: pass kinds or --all")
+        generator = ArtifactGenerator(ctx)
+        for kind in kinds:
+            artifact = generator.generate(kind)
+            console.print(f"[green]{kind} ✅ {artifact.path}[/green]")
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+
+
 @app.command()
 def replay(
     kind: Annotated[str | None, typer.Option(help="filter by event kind")] = None,
@@ -495,6 +556,36 @@ def replay(
             refs,
         )
     console.print(table)
+
+
+@app.command()
+def ui(
+    host: Annotated[str, typer.Option(help="bind host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="port")] = 8417,
+    no_open: Annotated[bool, typer.Option("--no-open", help="do not open the browser")] = False,
+) -> None:
+    """Launch the read-only route-map UI (requires tram[ui])."""
+    try:
+        import uvicorn
+
+        from tram.ui.api import create_app
+    except ImportError as exc:
+        _fail(RuntimeError(f"UI 依赖未安装：python -m pip install 'tram[ui]'（缺 {exc.name}）"))
+        return
+    try:
+        repo = Path.cwd()
+        load_context(repo)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    import threading
+    import webbrowser
+
+    url = f"http://{host}:{port}"
+    console.print(f"🚋 tram ui → {url}（Ctrl-C 退出；只读视图，操作请回 CLI）")
+    if not no_open:
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    uvicorn.run(create_app(repo), host=host, port=port, log_level="warning")
 
 
 def main() -> None:

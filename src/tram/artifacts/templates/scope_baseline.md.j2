@@ -1,0 +1,27 @@
+# 范围基线 · {{ project_name }}（v{{ version }}）
+
+- 生成时间：{{ now }}
+- 当前阶段：{{ phase }}
+{% if approved_by is defined %}
+- 批准人：{{ approved_by }}{% if approved_note %}（{{ approved_note }}）{% endif %}
+{% endif %}
+
+## 允许改动（allowed_paths）
+
+{% for p in allowed_paths %}
+- `{{ p }}`
+{% endfor %}
+
+## 禁止改动（forbidden_paths）
+
+{% if forbidden_paths %}
+{% for p in forbidden_paths %}
+- `{{ p }}`
+{% endfor %}
+{% else %}
+- （无）
+{% endif %}
+
+## 变更规则
+
+基线外改动会被 Intent Guard 拦截并自动生成变更请求（CR）；范围类 CR 经人工批准后并入基线（版本 +1），驳回则关闭。

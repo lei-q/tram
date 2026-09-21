@@ -1,0 +1,40 @@
+/* Tram design tokens - 淡雅暖纸底 + 五站马卡龙色。Phase 2 React 版直接复用本文件。 */
+:root {
+  --paper: #faf6ee;        /* 米纸底 */
+  --card: #ffffff;
+  --track: #dcd3c6;        /* 轨道 */
+  --ink: #4b4237;          /* 暖炭 */
+  --ink-soft: #8a7f6f;
+  --line: #eae2d3;
+
+  --st-init: #f2d48f;      /* 启动 · 杏黄 */
+  --st-plan: #a9d5bb;      /* 规划 · 薄荷 */
+  --st-exec: #a6c6e8;      /* 执行 · 雾蓝 */
+  --st-mon: #cbb9e9;       /* 监控 · 淡藤 */
+  --st-close: #f2b9b4;     /* 收尾 · 藕粉 */
+
+  --ok: #7fb98e;           /* 通过 · 抹茶 */
+  --fail: #e08a7e;         /* 阻塞 · 砖橘 */
+  --pending: #efb67e;      /* 待人审 · 蜜橘 */
+
+  --radius: 20px;
+  --radius-lg: 28px;
+  --shadow: 0 6px 18px rgba(75, 66, 55, 0.08);
+  --font:
+    "Nunito", "PingFang SC", "MiSans", "Hiragino Sans GB", "Microsoft YaHei",
+    system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #2a2620;      /* 暖夜底 */
+    --card: #353027;
+    --track: #4a4437;
+    --ink: #efe7d8;
+    --ink-soft: #a99e8c;
+    --line: #423c31;
+    --shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}

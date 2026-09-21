@@ -1,0 +1,21 @@
+# 质量计划 · {{ project_name }}
+
+- 生成时间：{{ now }}
+- 门禁配置：`.tram/gates.yaml`（策略决策：OPA/Rego 或内置 fallback）
+
+## 阶段门与确定性检查
+
+{% for g in gates %}
+### {{ g.id }}
+
+| 检查 | 类型 |
+|------|------|
+{% for c in g.checks %}
+| {{ c.id }} | {{ c.type }} |
+{% endfor %}
+{% endfor %}
+
+## 原则
+
+- 检查全部为确定性执行（子进程 + 解析），不经过 LLM 判断。
+- 门禁不通过即阻塞；纠偏循环超上限自动升级为人类裁决。

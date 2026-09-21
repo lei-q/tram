@@ -31,10 +31,11 @@ tram baseline approve --by 你的名字  # 人类批准范围基线（HITL）
 tram agent run --runner fake \
   --fake-plan plan.json \
   --fake-violation-plan bad.json    # 假 runner 演示：越界改动被拦截并生成 CR
-tram guard check               # 手动校验当前改动是否越界
+tram artifact generate --all   # 生成 6 类治理工件（自动挂证据，缺证据标 gap）
 tram gate run g2_quality_gate  # 跑质量门（确定性检查 + 策略决策）
 tram status                    # 项目状态一览
 tram replay --limit 20         # 回放事件黑匣子
+tram ui                        # 只读线路图 UI（需 pip install 'tram[ui]'）
 ```
 
 接真实引擎：`tram agent run --runner claude --prompt "实现 X"`（需 `claude` CLI；默认在 git worktree 沙箱内执行）。
@@ -47,12 +48,14 @@ src/tram/
 ├── obs/           # JSONL 事件日志（黑匣子）+ OTel 挂钩
 ├── evidence/      # git 证据客户端 + 证据真实性校验
 ├── governance/    # 确定性检查注册表 / OPA+fallback 策略引擎 / Intent Guard / 门禁执行器
+├── artifacts/     # 工件生成器 + Jinja2 模板（证据 frontmatter，确定性渲染）
+├── ui/            # 只读线路图 UI：FastAPI + SSE + 无构建 vanilla SVG 前端
 ├── sandbox/       # git worktree 沙箱（默认）／docker（可选）
 ├── adapters/      # AgentRunner 协议：claude CLI 适配器 + fake（离线测试）
-└── cli.py         # tram init/status/gate/guard/agent/baseline/replay
+└── cli.py         # tram init/status/baseline/gate/guard/agent/cr/artifact/replay/ui
 examples/demo-project/   # 端到端冒烟演示（smoke.sh）
 ```
 
 ## 状态
 
-Phase 1 垂直切片进行中，任务清单见 [docs/PLAN.md](docs/PLAN.md#任务分解)。
+Phase 1 垂直切片 + 只读线路图薄版已完成；任务清单与决策记录见 [docs/PLAN.md](docs/PLAN.md)。

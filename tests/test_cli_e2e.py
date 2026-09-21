@@ -37,6 +37,26 @@ def test_full_governance_slice(git_repo, monkeypatch):
     )
     assert any(a.kind == "scope_baseline" for a in state.human_approvals)
 
+    # 1b. artifacts: charter -> G0 pass (initiating -> planning)
+    result = runner.invoke(app, ["artifact", "generate", "charter"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(app, ["gate", "run", "g0_charter_gate"])
+    assert result.exit_code == 0, result.output
+    state = ProjectState.model_validate(
+        json.loads((git_repo / ".tram" / "state.json").read_text(encoding="utf-8"))
+    )
+    assert state.phase == "planning"
+
+    # 1c. all artifacts -> G1 pass (planning -> executing)
+    result = runner.invoke(app, ["artifact", "generate", "--all"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(app, ["gate", "run", "g1_planning_gate"])
+    assert result.exit_code == 0, result.output
+    state = ProjectState.model_validate(
+        json.loads((git_repo / ".tram" / "state.json").read_text(encoding="utf-8"))
+    )
+    assert state.phase == "executing"
+
     # 2. quality gate passes with green deterministic checks
     _write_gates(
         git_repo,
@@ -113,6 +133,7 @@ def test_full_governance_slice(git_repo, monkeypatch):
     assert EventKind.CR_CREATED in kinds
     assert EventKind.AGENT_RUN_STARTED in kinds
     assert EventKind.GATE_EVALUATED in kinds
+    assert EventKind.ARTIFACT_GENERATED in kinds
 
     # 6. a fully in-scope agent task is committed to a tram branch
     result = runner.invoke(

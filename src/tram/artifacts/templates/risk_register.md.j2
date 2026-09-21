@@ -1,0 +1,14 @@
+# 风险登记册 · {{ project_name }}
+
+- 生成时间：{{ now }}
+
+| ID | 风险 | 概率 | 影响 | 策略 | 触发证据 | 状态 |
+|----|------|------|------|------|----------|------|
+{% for r in risks %}
+| {{ r.id }} | {{ r.description }} | {{ r.probability }} | {{ r.impact }} | {{ r.strategy }} | event:#{{ r.trigger }} | {{ r.status }} |
+{% endfor %}
+{% if not risks %}
+（暂无风险记录）
+{% endif %}
+
+> 每条风险必须链接触发事件（黑匣子 seq）；`r-auto-*` 为 Intent Guard 拦截事件自动派生。

@@ -1,0 +1,150 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px 20px 48px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+}
+h1 { font-size: 20px; margin: 0; }
+h2 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  margin: 0 0 12px;
+}
+main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
+
+.topbar {
+  max-width: 980px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo { font-size: 26px; }
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 18px 22px;
+}
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+.chip {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--line);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chip--ok { background: color-mix(in srgb, var(--ok) 30%, transparent); }
+.chip--fail { background: color-mix(in srgb, var(--fail) 30%, transparent); }
+.chip--pending { background: color-mix(in srgb, var(--pending) 35%, transparent); }
+.chip--idle { opacity: 0.55; }
+
+/* ---- 线路图 ---- */
+#route-map { width: 100%; height: auto; display: block; }
+.track { stroke: var(--track); stroke-width: 10; fill: none; stroke-linecap: round; }
+.branch {
+  stroke: var(--pending);
+  stroke-width: 6;
+  fill: none;
+  stroke-dasharray: 2 14;
+  stroke-linecap: round;
+}
+.branch-label { fill: var(--ink-soft); font-size: 13px; font-weight: 700; }
+.station-label { fill: var(--ink); font-size: 14px; font-weight: 700; text-anchor: middle; }
+.gate-label { fill: var(--ink-soft); font-size: 11px; font-weight: 700; text-anchor: middle; }
+.signal-stem { stroke: var(--track); stroke-width: 3; }
+.signal circle { fill: var(--line); transition: fill 0.4s; }
+.signal--ok circle { fill: var(--ok); }
+.signal--fail circle { fill: var(--fail); animation: pulse 1.6s ease-in-out infinite; }
+.signal--blocked_pending_human circle { fill: var(--pending); animation: pulse 1.6s ease-in-out infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ---- Trammy ---- */
+.tram { transition: transform 0.6s ease-in-out; }
+.tram-body { fill: var(--card); stroke: var(--ink); stroke-width: 3; }
+.tram-window { fill: var(--st-exec); stroke: none; }
+.tram-wheel { fill: var(--ink); }
+.tram-face { fill: var(--ink); stroke: var(--ink); }
+.tram .zzz { fill: var(--pending); font-size: 14px; font-weight: 700; opacity: 0; }
+.tram.is-waiting .zzz { opacity: 1; }
+.tram.is-blocked .tram-window { fill: var(--fail); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tram { transition: none; }
+  .signal--fail circle, .signal--blocked_pending_human circle { animation: none; }
+}
+
+/* ---- 仪表盘 ---- */
+#gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.gauge {
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 10px 14px;
+}
+.gauge .num { font-size: 22px; font-weight: 800; }
+.gauge .lbl { font-size: 12px; color: var(--ink-soft); }
+.gauge--dim { opacity: 0.55; }
+
+/* ---- CR 支线 ---- */
+#cr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+#cr-list .empty { color: var(--ink-soft); }
+.cr-item { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cr-item code { font-size: 12px; color: var(--ink-soft); }
+
+/* ---- 车票夹 ---- */
+.tickets { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.ticket {
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  position: relative;
+  background: var(--paper);
+}
+.ticket .kind { font-weight: 800; }
+.ticket .path { font-size: 12px; color: var(--ink-soft); font-family: ui-monospace, monospace; }
+.holes { margin-top: 8px; font-size: 15px; letter-spacing: 3px; }
+.ticket--verified { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.ticket--verified .stamp {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  color: var(--ok);
+  font-size: 11px;
+  font-weight: 800;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  padding: 1px 5px;
+  transform: rotate(-8deg);
+}
+.ticket--gap { border-style: dashed; }
+.ticket .gap-note { color: var(--pending); font-size: 12px; font-weight: 700; }
+
+/* ---- 调度日志 ---- */
+.events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.events li { padding: 3px 0; border-bottom: 1px dashed var(--line); display: flex; gap: 10px; }
+.events .seq { color: var(--ink-soft); min-width: 42px; }
+.events .kind { font-weight: 700; }
+.events .refs { color: var(--ink-soft); margin-left: auto; text-align: right; }

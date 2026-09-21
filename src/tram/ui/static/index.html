@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Tram · 线路图</title>
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <span class="logo">🚋</span>
+    <h1 id="project-name">Tram</h1>
+    <span id="phase-chip" class="chip">…</span>
+    <span id="baseline-chip" class="chip chip--idle">基线待批</span>
+  </header>
+
+  <main>
+    <section class="card map-card">
+      <h2>线路图 · 治理主线</h2>
+      <svg id="route-map" viewBox="0 0 920 250" role="img" aria-label="项目治理线路图"></svg>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>司机仪表盘</h2>
+        <div id="gauges"></div>
+      </div>
+      <div class="card">
+        <h2>绕行支线 · 变更请求</h2>
+        <ul id="cr-list"></ul>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>车票夹 · 工件（打孔 = 证据已验）</h2>
+      <div id="tickets" class="tickets"></div>
+    </section>
+
+    <section class="card">
+      <h2>调度日志 · 行车记录仪</h2>
+      <ul id="events" class="events"></ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

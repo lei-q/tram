@@ -72,12 +72,14 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 | T1.9 | worktree 沙箱（默认）+ Claude Code 适配器 + fake runner | ✅（docker 模式预留配置，未实现） |
 | T1.10 | 状态机（阶段推进 + 纠偏轮次上限） | 🔶 纯函数版已用；LangGraph 包装 Phase 2 接 |
 | T1.11 | HITL 门（baseline approve / cr approve / cr reject） | ✅ |
-| T1.12 | 工件生成器 + 4 核心模板（charter/scope/wbs/risk） | ⬜ Phase 1 收尾项（证据校验链已备好） |
+| T1.12 | 工件生成器 + 6 类模板（charter/scope_baseline/wbs/schedule/quality_plan/risk_register） | ✅ 证据 frontmatter + 确定性渲染 + 风险自动派生 |
 | T1.13 | CR 流程（拦截自动建档 → 裁决 → 基线 v+1 → 门联动） | ✅ |
-| T1.14 | demo 端到端冒烟（smoke.sh：拦截→CR→门红→驳回→门绿→回放） | ✅ |
-| U1–U3 | 只读线路图薄版（设计 token / FastAPI+SSE / SVG 主视图） | ⬜ Phase 1 收尾项（D7-a） |
+| T1.14 | demo 端到端冒烟（smoke.sh：init→G0→G1→拦截→CR→门红→驳回→门绿→回放） | ✅ |
+| U1–U3 | 只读线路图薄版 | ✅ design tokens + FastAPI/SSE 只读 API + SVG 主视图（Trammy 滑行/信号灯/车票打孔/CR 支线/夜间模式/断线自愈） |
 
-验证：`ruff check` 全绿；pytest 44 passed + 1 skipped（OPA 对比测试，CI 有 OPA 时运行）；smoke.sh 全流程真人可见。
+**U1–U3 实现说明（对 D8 的偏差）**：薄版采用无构建 vanilla JS + SVG，而非 React+Vite——零 Node 工具链、静态资源直接进 wheel、`tram ui` 完全离线。设计 token 独立于 tokens.css，Phase 2 React 版直接复用该文件与全部视觉规范。
+
+验证：`ruff check` 全绿；pytest 59 passed + 1 skipped（OPA 对比测试，CI 有 OPA 时运行）；smoke.sh 全流程真人可见；`tram ui` 实测 serve 页面 / state / artifacts / SSE 均正常。
 
 ## 7. UI 设计基调（D7/D8 已确认）
 

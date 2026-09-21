@@ -1,0 +1,14 @@
+# 工作分解（WBS） · {{ project_name }}
+
+- 生成时间：{{ now }}
+- 任务数：{{ tasks | length }}（完成 {{ done }}）
+- 总估算：{{ total_est }} 点 · 已投入：{{ total_spent }} 点
+
+| ID | 任务 | 状态 | 估算 | 投入 | 返工 |
+|----|------|------|------|------|------|
+{% for t in tasks %}
+| {{ t.id }} | {{ t.title }} | {{ t.status }} | {{ t.est_points }} | {{ t.spent_points }} | {{ t.rework_count }} |
+{% endfor %}
+{% if not tasks %}
+（暂无任务：通过 `tram agent run` 执行任务后自动登记）
+{% endif %}
