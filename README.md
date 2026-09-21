@@ -33,7 +33,8 @@ tram agent run --runner fake \
   --fake-plan plan.json \
   --fake-violation-plan bad.json    # 假 runner 演示：越界改动被拦截并生成 CR
 tram artifact generate --all   # 生成 6 类治理工件（自动挂证据，缺证据标 gap）
-tram gate run g2_quality_gate  # 跑质量门（确定性检查 + 策略决策）
+tram run                       # 沿治理主线连续过门禁：绿灯推进，红灯/待人审即停
+tram gate run g2_quality_gate  # 跑单座门禁（确定性检查 + 策略决策）
 tram task points T-001 --est 4 --spent 6  # 维护任务点数（EVM 数据源）
 tram evm snapshot              # 计算 SPI/CPI；越界自动登记风险（阈值可配）
 tram qa fail T-001 --note "复现步骤…"      # QA 复现失败 → 自动建返工任务（rework 链）
@@ -60,11 +61,12 @@ src/tram/
 ├── evidence/      # git 证据客户端 + 证据真实性校验
 ├── governance/    # 确定性检查注册表 / OPA+fallback 策略引擎 / Intent Guard / 门禁执行器
 ├── metrics/       # EVM 引擎（SPI/CPI 越界入险）+ KPI（门禁/缺陷 MTTR、返工率）——纯确定性
+├── orchestration/ # 阶段推进纯函数 + 治理主线状态机（LangGraph 包装/零依赖解释器）
 ├── artifacts/     # 工件生成器 + Jinja2 模板（证据 frontmatter，确定性渲染）
 ├── ui/            # 只读线路图 UI：FastAPI + SSE + 无构建 vanilla SVG 前端
 ├── sandbox/       # git worktree 沙箱（默认）／docker（可选）
 ├── adapters/      # AgentRunner 协议：claude CLI 适配器 + fake（离线测试）
-└── cli.py         # tram init/status/baseline/gate/guard/agent/cr/artifact/task/evm/qa/kpi/replay/ui
+└── cli.py         # tram init/status/run/baseline/gate/guard/agent/cr/artifact/task/evm/qa/kpi/replay/ui
 examples/demo-project/   # 端到端冒烟演示（smoke.sh）
 ```
 

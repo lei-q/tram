@@ -32,6 +32,9 @@ echo "==> generate all artifacts, pass G1 (planning -> executing)"
 tram artifact generate --all
 tram gate run g1_planning_gate
 
+echo "==> tram run: drive the line gate by gate (green advances, red stops)"
+tram run
+
 echo "==> agent task with an out-of-scope write (expect INTENT BLOCKED + CR)"
 tram agent run --runner fake \
   --prompt "add mul" \

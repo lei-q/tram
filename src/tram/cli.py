@@ -34,6 +34,7 @@ from tram.models.cr import Approval, CRStatus, CRType
 from tram.models.events import EventKind
 from tram.models.gates import GateStatus
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
+from tram.orchestration import invoke_flow
 from tram.sandbox.worktree import WorktreeSession
 
 app = typer.Typer(help="Tram 🚋 - governance rails for AI coding agents.", no_args_is_help=True)
@@ -228,6 +229,24 @@ def gate_run(gate_id: Annotated[str, typer.Argument(help="e.g. g2_quality_gate")
         console.print("[yellow]→ blocked pending human decision[/yellow]")
     if result.status != GateStatus.PASS:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def run() -> None:
+    """开到底站为止：沿主线连续过门禁，绿灯推进、红灯必停。"""
+    try:
+        ctx = load_context()
+        final, engine = invoke_flow(GateRunner(ctx))
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    for line in final.get("journey", []):
+        console.print(line)
+    stop = final.get("stop_reason")
+    if stop:
+        console.print(Panel(stop, title=f"停车（{engine}）", border_style="yellow"))
+    else:
+        console.print(f"[green]全线绿灯，抵达终点站 ✅（{engine}）[/green]")
 
 
 @guard_app.command("check")

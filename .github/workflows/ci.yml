@@ -20,7 +20,7 @@ jobs:
         with:
           opa-version: latest
       - run: python -m pip install --upgrade pip
-      - run: pip install -e ".[dev,ui]"
+      - run: pip install -e ".[dev,ui,orchestration]"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q --cov=tram --cov-report=term-missing
