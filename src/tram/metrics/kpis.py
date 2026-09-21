@@ -1,7 +1,8 @@
-"""KPI reports (MTTR / rework) - read the black box, compute deterministically."""
+"""KPI reports (gate/defect MTTR, rework rate) - read the black box, compute deterministically."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from tram.models.events import EventKind, TramEvent
@@ -12,9 +13,9 @@ _UNHEALTHY = ("fail", "blocked_pending_human")
 
 
 @dataclass
-class GateMTTR:
-    gate_id: str
-    breaches: int = 0  # fail/blocked episodes closed by a later pass
+class MTTRItem:
+    subject: str  # gate id or task id
+    breaches: int = 0
     total_seconds: float = 0.0
 
     @property
@@ -24,9 +25,9 @@ class GateMTTR:
 
 @dataclass
 class MTTRReport:
-    gates: list[GateMTTR]
+    items: list[MTTRItem]
     overall_mttr_seconds: float
-    open_breaches: list[str]  # gates currently red with no recovery yet
+    open_subjects: list[str]  # currently red / unfixed
 
 
 @dataclass
@@ -38,36 +39,74 @@ class ReworkReport:
     rate: float  # tasks_with_rework / tasks_done
 
 
-def mttr_report(events: list[TramEvent]) -> MTTRReport:
-    """门禁即信号：一次 fail/blocked 到同门禁下一次 pass 的时长 = 一次越界恢复。"""
-    per: dict[str, GateMTTR] = {}
+def _pair_mttr(
+    events: list[TramEvent],
+    open_pred: Callable[[TramEvent], bool],
+    close_pred: Callable[[TramEvent], bool],
+    subject_of: Callable[[TramEvent], str | None],
+) -> MTTRReport:
+    """通用越界-恢复配对：open 到下一次同主体 close 的时长 = 一次恢复。"""
+    per: dict[str, MTTRItem] = {}
     open_since: dict[str, TramEvent] = {}
     for event in events:
-        if event.kind != EventKind.GATE_EVALUATED:
+        subject = subject_of(event)
+        if subject is None:
             continue
-        gate_id = event.refs.get("gate", "?")
-        status = event.data.get("status")
-        if status in _UNHEALTHY:
-            open_since.setdefault(gate_id, event)
-        elif status == "pass" and gate_id in open_since:
-            opened = open_since.pop(gate_id)
-            m = per.setdefault(gate_id, GateMTTR(gate_id=gate_id))
-            m.breaches += 1
-            m.total_seconds += (event.ts - opened.ts).total_seconds()
+        if open_pred(event):
+            open_since.setdefault(subject, event)  # consecutive opens keep the first
+        elif close_pred(event) and subject in open_since:
+            opened = open_since.pop(subject)
+            item = per.setdefault(subject, MTTRItem(subject=subject))
+            item.breaches += 1
+            item.total_seconds += (event.ts - opened.ts).total_seconds()
     closed = [m for m in per.values() if m.breaches]
     total_breaches = sum(m.breaches for m in closed)
     overall = (
         round(sum(m.total_seconds for m in closed) / total_breaches, 1) if total_breaches else 0.0
     )
     return MTTRReport(
-        gates=sorted(per.values(), key=lambda m: m.gate_id),
+        items=sorted(per.values(), key=lambda m: m.subject),
         overall_mttr_seconds=overall,
-        open_breaches=sorted(open_since),
+        open_subjects=sorted(open_since),
+    )
+
+
+def _gate_subject(event: TramEvent) -> str | None:
+    return event.refs.get("gate")
+
+
+def mttr_report(events: list[TramEvent]) -> MTTRReport:
+    """门禁即信号：fail/blocked 到同门禁下一次 pass 的时长。"""
+    return _pair_mttr(
+        events,
+        open_pred=lambda e: (
+            e.kind == EventKind.GATE_EVALUATED and e.data.get("status") in _UNHEALTHY
+        ),
+        close_pred=lambda e: e.kind == EventKind.GATE_EVALUATED and e.data.get("status") == "pass",
+        subject_of=_gate_subject,
+    )
+
+
+def _defect_subject(event: TramEvent) -> str | None:
+    if event.kind == EventKind.QA_FAILED:
+        return event.refs.get("rework_task") or event.data.get("rework_task")
+    if event.kind == EventKind.QA_PASSED:
+        return event.refs.get("task")
+    return None
+
+
+def defect_mttr(events: list[TramEvent]) -> MTTRReport:
+    """缺陷 MTTR：qa_failed 到对应返工任务 qa_passed 的时长（按返工任务 id 配对）。"""
+    return _pair_mttr(
+        events,
+        open_pred=lambda e: e.kind == EventKind.QA_FAILED,
+        close_pred=lambda e: e.kind == EventKind.QA_PASSED,
+        subject_of=_defect_subject,
     )
 
 
 def rework_report(state: ProjectState) -> ReworkReport:
-    """返工率 = 有返工记录的已完成任务 / 已完成任务（QA 闭环接入后由闭环维护计数）。"""
+    """返工率 = 有返工记录的已完成任务 / 已完成任务（qa fail 自动维护计数）。"""
     done = [t for t in state.tasks if t.status == TaskStatus.DONE]
     with_rework = sum(1 for t in done if t.rework_count > 0)
     return ReworkReport(

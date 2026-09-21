@@ -213,3 +213,58 @@ def test_full_governance_slice(git_repo, monkeypatch):
     result = runner.invoke(app, ["status"], env={"COLUMNS": "220"})
     assert result.exit_code == 0
     assert "evm (latest)" in result.output
+
+    # 11. QA loop: fail T-002 -> rework task T-003 -> dev fixes it -> qa pass
+    result = runner.invoke(app, ["qa", "fail", "T-002", "--note", "edge case broken", "--by", "qa"])
+    assert result.exit_code == 0, result.output
+    assert "rework task T-003" in result.output
+
+    state = ProjectState.model_validate(
+        json.loads((git_repo / ".tram" / "state.json").read_text(encoding="utf-8"))
+    )
+    rework = next(t for t in state.tasks if t.id == "T-003")
+    assert rework.rework_of == "T-002"
+    assert rework.status.value == "todo"
+    assert state.task("T-002").rework_count == 1
+
+    result = runner.invoke(
+        app,
+        [
+            "agent",
+            "run",
+            "--task",
+            "T-003",
+            "--role",
+            "dev",
+            "--runner",
+            "fake",
+            "--prompt",
+            "fix the edge case",
+            "--fake-plan",
+            str(plan_ok),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "committed" in result.output
+
+    result = runner.invoke(
+        app, ["qa", "pass", "T-003", "--note", "reproduction green", "--by", "qa"]
+    )
+    assert result.exit_code == 0, result.output
+
+    state = ProjectState.model_validate(
+        json.loads((git_repo / ".tram" / "state.json").read_text(encoding="utf-8"))
+    )
+    assert state.task("T-003").status.value == "done"
+    assert {t.id for t in state.tasks} == {"T-001", "T-002", "T-003"}
+
+    # 12. defect MTTR pairs qa_failed(T-003) with qa_passed(T-003); rework rate 1/2
+    result = runner.invoke(app, ["kpi"], env={"COLUMNS": "220"})
+    assert result.exit_code == 0, result.output
+    assert "MTTR 缺陷" in result.output
+    assert "T-003" in result.output
+    assert "50.0%" in result.output  # 1 of 2 done tasks has rework
+
+    kinds = [e.kind for e in events.read()]
+    assert EventKind.QA_FAILED in kinds
+    assert EventKind.QA_PASSED in kinds

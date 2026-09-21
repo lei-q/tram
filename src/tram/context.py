@@ -17,6 +17,8 @@ from tram.state_store import StateStore
 
 TRAM_DIR = ".tram"
 PACKAGED_POLICIES = Path(__file__).parent / "governance" / "policies"
+PACKAGED_ROLES = Path(__file__).parent / "roles"
+ROLE_KINDS = ("pm", "qa", "dev")
 
 BASELINE_TEMPLATE = """\
 # 范围基线（Intent Guard 依据）：列出本任务允许改动的路径 globs。
@@ -71,6 +73,15 @@ class TramContext:
     def packaged_policies(self) -> Path:
         return PACKAGED_POLICIES
 
+    @property
+    def roles_dir(self) -> Path:
+        return self.tram_dir / "roles"
+
+    def role_prompt_file(self, role: str) -> Path:
+        """项目自定义角色模板优先；未定制则回落到包内模板。"""
+        custom = self.roles_dir / f"{role}.md"
+        return custom if custom.exists() else PACKAGED_ROLES / f"{role}.md"
+
     def make_policy_engine(self):
         return make_policy_engine(self.config, self.repo, PACKAGED_POLICIES)
 
@@ -103,6 +114,11 @@ def init_project(repo: Path, name: str | None = None, force: bool = False) -> Tr
     (tram_dir / "artifacts").mkdir(parents=True, exist_ok=True)
     (tram_dir / "crs").mkdir(parents=True, exist_ok=True)
     (tram_dir / "worktrees").mkdir(parents=True, exist_ok=True)
+    (tram_dir / "roles").mkdir(parents=True, exist_ok=True)
+    for role in ROLE_KINDS:
+        role_file = tram_dir / "roles" / f"{role}.md"
+        if not role_file.exists():
+            shutil.copyfile(PACKAGED_ROLES / f"{role}.md", role_file)
 
     config = TramConfig(project_name=name or repo.name)
     config.dump(tram_dir / "tram.yaml")

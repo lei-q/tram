@@ -37,6 +37,8 @@ REFRESH_KINDS = {
     "evm_snapshot",
     "risk_registered",
     "task_updated",
+    "qa_failed",
+    "qa_passed",
 }
 
 

@@ -57,7 +57,16 @@ tram task points T-001 --est 8 --spent 8
 tram evm snapshot
 tram evm show
 
-echo "==> KPI dashboard (gate MTTR + rework rate)"
+echo "==> QA loop: reproduce a defect on T-002 (expect rework task T-003)"
+tram qa fail T-002 --note "mul(2,3) 返回 5" --by "$USER"
+
+echo "==> dev fixes the rework task through the rails (role prompt: dev)"
+tram agent run --task T-003 --role dev --runner fake --prompt "修复 mul" --fake-plan plan-ok.json
+
+echo "==> QA verifies the fix (expect defect closed)"
+tram qa pass T-003 --note "复现测试转绿" --by "$USER"
+
+echo "==> KPI dashboard (gate MTTR + defect MTTR + rework rate)"
 tram kpi
 
 echo "==> regenerate the risk register (now carries the EVM risks)"

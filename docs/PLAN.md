@@ -89,7 +89,9 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第一批）**：EVM 引擎（`tram metrics/evm.py`，PV=Σest / EV=done 的 est / AC=Σspent，纯确定性）；`tram task points` / `tram agent run --points`（完成任务自动 spent=est）；`tram evm snapshot|show`（快照落 `.tram/artifacts/evm/`，阈值 spi∈[0.85,1.15]、cpi≥0.9 可配，越界即自动入风险册 `r-evm-<日期>-<指标>`，同日重跑幂等，trigger 指向 EVM 事件 seq）；`tram kpi`（门禁 MTTR=同门禁 fail/blocked→下次 pass 的时长，返工率=有返工的完成任务/完成任务，均从黑匣子与 state 确定性计算）；UI 仪表盘通电（/api/state 增 `evm` 字段，SPI/CPI 仪表盘实时显示，越界红色告警）；`tram status` 增 EVM 行。
 
-**待做**：QA 复现-修复闭环（MTTR 回路闭合 + rework_count 维护）；PM/QA/Dev 提示词分离；返工率/逃逸率统计接入真实闭环；UI 完整版（车票夹/调度日志/变更支线/风险气象台/站台审批）；LangGraph 包装（T1.10）；docker 沙箱。
+**已完成（第二批：QA 复现-修复闭环）**：`tram qa fail <task>`（rework_count+1 并自动创建返工任务，`rework_of` 链、est 点数结转，QA_FAILED 事件带 task/rework_task refs）；`tram qa pass <task>`（返工闭环，QA_PASSED 事件）；`tram agent run --task T-XXX`（挂到既有返工任务而非新建）；缺陷 MTTR=qa_failed 到对应返工任务 qa_passed 的时长（按返工任务 id 配对，与门禁 MTTR 共用同一通用配对引擎）；`tram kpi` 增「MTTR 缺陷」段。**PM/QA/Dev 提示词分离**：`.tram/roles/{pm,qa,dev}.md`（init 装入、项目可自定义，包内模板兜底），`tram agent run --role <role>` 以 Jinja2 渲染（注入 task_id/task_prompt），角色记入 AGENT_RUN_STARTED。
+
+**待做**：返工率/逃逸率统计接入真实闭环（逃逸率=QA 后又被门禁/人工打回的比例，待定义口径）；UI 完整版（车票夹/调度日志/变更支线/风险气象台/站台审批）；LangGraph 包装（T1.10）；docker 沙箱。
 
 ## 9. 风险登记（项目自身）
 

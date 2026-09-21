@@ -8,7 +8,7 @@ import json
 from typer.testing import CliRunner
 
 from tram.cli import app
-from tram.metrics.kpis import mttr_report, rework_report
+from tram.metrics.kpis import defect_mttr, mttr_report, rework_report
 from tram.models.events import EventKind, TramEvent
 from tram.models.state import ProjectState
 from tram.models.task import TaskRecord, TaskStatus
@@ -38,17 +38,17 @@ def test_mttr_pairs_fail_with_next_pass():
         _gate_ev(3, _t(60), "pass"),
     ]
     report = mttr_report(events)
-    assert report.open_breaches == []
-    assert len(report.gates) == 1
-    m = report.gates[0]
-    assert (m.gate_id, m.breaches, m.mttr_seconds) == ("g2_quality_gate", 1, 3600.0)
+    assert report.open_subjects == []
+    assert len(report.items) == 1
+    m = report.items[0]
+    assert (m.subject, m.breaches, m.mttr_seconds) == ("g2_quality_gate", 1, 3600.0)
     assert report.overall_mttr_seconds == 3600.0
 
 
 def test_mttr_blocked_pending_human_counts_as_breach():
     events = [_gate_ev(1, _t(0), "blocked_pending_human"), _gate_ev(2, _t(30), "pass")]
     report = mttr_report(events)
-    assert report.gates[0].mttr_seconds == 1800.0
+    assert report.items[0].mttr_seconds == 1800.0
 
 
 def test_mttr_multiple_episodes_and_gates():
@@ -61,7 +61,7 @@ def test_mttr_multiple_episodes_and_gates():
         _gate_ev(6, _t(65), "pass", gate="g2"),
     ]
     report = mttr_report(events)
-    by_gate = {m.gate_id: m for m in report.gates}
+    by_gate = {m.subject: m for m in report.items}
     assert by_gate["g1"].breaches == 2
     assert by_gate["g1"].mttr_seconds == round((600 + 1800) / 2, 1)
     assert by_gate["g2"].mttr_seconds == 3600.0
@@ -74,8 +74,8 @@ def test_mttr_open_breach_has_no_recovery_yet():
         _gate_ev(2, _t(10), "fail"),
     ]
     report = mttr_report(events)
-    assert report.open_breaches == ["g2_quality_gate"]
-    assert report.gates == []
+    assert report.open_subjects == ["g2_quality_gate"]
+    assert report.items == []
     assert report.overall_mttr_seconds == 0.0
 
 
@@ -83,7 +83,38 @@ def test_mttr_ignores_other_events():
     noise = TramEvent(
         seq=1, ts=_t(0), kind=EventKind.HUMAN_DECISION, source="tram.cli", data={"status": "fail"}
     )
-    assert mttr_report([noise]).gates == []
+    assert mttr_report([noise]).items == []
+
+
+def _qa_ev(
+    seq: int, ts: dt.datetime, kind: EventKind, task: str, rework: str | None = None
+) -> TramEvent:
+    return TramEvent(
+        seq=seq,
+        ts=ts,
+        kind=kind,
+        source="tram.qa",
+        data={"task": task, **({"rework_task": rework} if rework else {})},
+        refs={"task": task, **({"rework_task": rework} if rework else {})},
+    )
+
+
+def test_defect_mttr_pairs_fail_with_rework_pass():
+    events = [
+        _qa_ev(1, _t(0), EventKind.QA_FAILED, task="T-001", rework="T-002"),
+        _qa_ev(2, _t(45), EventKind.QA_PASSED, task="T-002"),
+    ]
+    report = defect_mttr(events)
+    assert report.open_subjects == []
+    assert report.items[0].subject == "T-002"
+    assert report.items[0].mttr_seconds == 2700.0
+
+
+def test_defect_mttr_open_defect_has_no_pass_yet():
+    events = [_qa_ev(1, _t(0), EventKind.QA_FAILED, task="T-001", rework="T-002")]
+    report = defect_mttr(events)
+    assert report.open_subjects == ["T-002"]
+    assert report.items == []
 
 
 def test_rework_report():

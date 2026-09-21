@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from jinja2 import StrictUndefined, Template
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -16,7 +18,7 @@ from rich.table import Table
 from tram.adapters.base import RunnerUnavailableError
 from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
-from tram.context import TramContext, init_project, load_context
+from tram.context import ROLE_KINDS, TramContext, init_project, load_context
 from tram.cr_store import CRStore
 from tram.governance.gate_runner import GateRunner
 from tram.governance.intent_guard import IntentGuard
@@ -27,7 +29,7 @@ from tram.metrics.evm import (
     latest_snapshot,
     save_snapshot,
 )
-from tram.metrics.kpis import mttr_report, rework_report
+from tram.metrics.kpis import defect_mttr, mttr_report, rework_report
 from tram.models.cr import Approval, CRStatus, CRType
 from tram.models.events import EventKind
 from tram.models.gates import GateStatus
@@ -43,6 +45,7 @@ cr_app = typer.Typer(help="change requests", no_args_is_help=True)
 artifact_app = typer.Typer(help="governance artifacts (tickets)", no_args_is_help=True)
 task_app = typer.Typer(help="task records (EVM data source)", no_args_is_help=True)
 evm_app = typer.Typer(help="earned value management (SPI/CPI)", no_args_is_help=True)
+qa_app = typer.Typer(help="QA loop: reproduce -> rework -> verify", no_args_is_help=True)
 app.add_typer(baseline_app, name="baseline")
 app.add_typer(gate_app, name="gate")
 app.add_typer(guard_app, name="guard")
@@ -51,6 +54,7 @@ app.add_typer(cr_app, name="cr")
 app.add_typer(artifact_app, name="artifact")
 app.add_typer(task_app, name="task")
 app.add_typer(evm_app, name="evm")
+app.add_typer(qa_app, name="qa")
 
 console = Console()
 COMMIT_TRAILER = "Co-Authored-By: Claude Code <noreply@anthropic.com>"
@@ -74,6 +78,23 @@ def _load_json_plan(path: Path | None) -> dict[str, str]:
     ):
         raise ValueError(f"plan file must be a JSON object of {{path: content}}: {path}")
     return data
+
+
+def _next_task_id(state) -> str:
+    """分配不冲突的任务 id：以现有 id 为准，防止计数器与手工编辑漂移。"""
+    nums = [int(m.group(1)) for t in state.tasks if (m := re.fullmatch(r"T-(\d+)", t.id))]
+    seq = max(state.next_task_seq, max(nums, default=0) + 1)
+    state.next_task_seq = seq + 1
+    return f"T-{seq:03d}"
+
+
+def _render_role_prompt(ctx: TramContext, role: str, task_id: str, prompt: str) -> str:
+    """PM/QA/Dev 提示词分离：项目可定制 .tram/roles/<role>.md，包内模板兜底。"""
+    template_file = ctx.role_prompt_file(role)
+    if not template_file.exists():
+        raise ValueError(f"role template not found: {template_file} ({' | '.join(ROLE_KINDS)})")
+    template = Template(template_file.read_text(encoding="utf-8"), undefined=StrictUndefined)
+    return template.render(task_id=task_id, task_prompt=prompt)
 
 
 @app.command()
@@ -274,6 +295,11 @@ def agent_run(
     points: Annotated[
         float | None, typer.Option(help="story-point estimate for this task (EVM)")
     ] = None,
+    role: Annotated[str, typer.Option(help="role prompt template: pm | qa | dev")] = "dev",
+    task_ref: Annotated[
+        str | None,
+        typer.Option("--task", help="attach to an existing task (e.g. a QA rework task)"),
+    ] = None,
 ) -> None:
     """Run one agent task in a worktree sandbox, guarded by Intent Guard."""
     try:
@@ -282,8 +308,6 @@ def agent_run(
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
-    task_id = f"T-{state.next_task_seq:03d}"
-    state.next_task_seq += 1
 
     if runner == "fake":
         writes = _load_json_plan(fake_plan)
@@ -294,25 +318,49 @@ def agent_run(
     else:
         _fail(ValueError(f"unknown runner '{runner}' (fake | claude)"))
         return
+    if role not in ROLE_KINDS:
+        _fail(ValueError(f"unknown role '{role}' ({' | '.join(ROLE_KINDS)})"))
+        return
+
+    if task_ref is not None:
+        record = state.task(task_ref)
+        if record is None:
+            _fail(ValueError(f"unknown task: {task_ref} (see `tram task list`)"))
+            return
+        if record.status not in (TaskStatus.TODO, TaskStatus.BLOCKED, TaskStatus.DOING):
+            _fail(ValueError(f"task {task_ref} is {record.status.value}; cannot attach a run"))
+            return
+        task_id = record.id
+        record.status = TaskStatus.DOING
+        if points is not None:
+            record.est_points = points
+    else:
+        task_id = _next_task_id(state)
+        record = TaskRecord(
+            id=task_id,
+            title=prompt.splitlines()[0][:80],
+            status=TaskStatus.DOING,
+            est_points=points if points is not None else 1.0,
+        )
+        state.tasks.append(record)
+
+    try:
+        spec_prompt = _render_role_prompt(ctx, role, task_id, prompt)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
 
     spec = TaskSpec(
         id=task_id,
-        prompt=prompt,
+        prompt=spec_prompt,
         allowed_tools=allowed_tools.split(",") if allowed_tools else [],
         max_turns=max_turns,
     )
-    record = TaskRecord(
-        id=task_id,
-        title=prompt.splitlines()[0][:80],
-        status=TaskStatus.DOING,
-        est_points=points if points is not None else 1.0,
-    )
-    state.tasks.append(record)
     ctx.state_store.save(state)
     ctx.events.append(
         EventKind.AGENT_RUN_STARTED,
         source="tram.agent",
-        data={"task": task_id, "runner": runner, "prompt": prompt[:500]},
+        data={"task": task_id, "runner": runner, "role": role, "prompt": prompt[:500]},
     )
 
     try:
@@ -703,13 +751,82 @@ def evm_show() -> None:
         console.print("[green]within thresholds ✅[/green]")
 
 
-@app.command()
-def kpi() -> None:
-    """KPI dashboard: gate MTTR + rework rate (computed from the black box)."""
+@qa_app.command("fail")
+def qa_fail(
+    task_id: Annotated[str, typer.Argument(help="task that failed QA, e.g. T-002")],
+    note: Annotated[str, typer.Option(help="symptom / evidence")] = "",
+    by: Annotated[str, typer.Option(help="reporter identity")] = "qa",
+) -> None:
+    """QA 复现失败：登记缺陷并自动创建返工任务（rework_of 链）。"""
     try:
         ctx = load_context()
         state = ctx.load_state()
-        report = mttr_report(list(ctx.events.read()))
+        record = state.task(task_id)
+        if record is None:
+            raise ValueError(f"unknown task: {task_id} (see `tram task list`)")
+        record.rework_count += 1
+        rework = TaskRecord(
+            id=_next_task_id(state),
+            title=f"修复 {task_id}: {note.splitlines()[0][:60] if note else 'rework'}",
+            status=TaskStatus.TODO,
+            est_points=record.est_points,
+            rework_of=task_id,
+        )
+        state.tasks.append(rework)
+        ctx.state_store.save(state)
+        ctx.events.append(
+            EventKind.QA_FAILED,
+            source="tram.qa",
+            data={"task": task_id, "rework_task": rework.id, "note": note, "by": by},
+            refs={"task": task_id, "rework_task": rework.id},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print(f"[red]qa fail: {task_id} (rework #{record.rework_count})[/red]")
+    console.print(
+        f"[yellow]rework task {rework.id}: `tram agent run --task {rework.id} --role dev`[/yellow]"
+    )
+
+
+@qa_app.command("pass")
+def qa_pass(
+    task_id: Annotated[str, typer.Argument(help="task verified fixed, e.g. the rework task")],
+    note: Annotated[str, typer.Option(help="verification evidence")] = "",
+    by: Annotated[str, typer.Option(help="verifier identity")] = "qa",
+) -> None:
+    """QA 验证通过：返工闭环（缺陷 MTTR 的终点）。"""
+    try:
+        ctx = load_context()
+        state = ctx.load_state()
+        record = state.task(task_id)
+        if record is None:
+            raise ValueError(f"unknown task: {task_id} (see `tram task list`)")
+        if record.status != TaskStatus.DONE:
+            record.status = TaskStatus.DONE
+            record.spent_points = record.est_points
+        ctx.state_store.save(state)
+        ctx.events.append(
+            EventKind.QA_PASSED,
+            source="tram.qa",
+            data={"task": task_id, "note": note, "by": by},
+            refs={"task": task_id},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print(f"[green]qa pass: {task_id} verified ✅[/green]")
+
+
+@app.command()
+def kpi() -> None:
+    """KPI dashboard: gate/defect MTTR + rework rate (computed from the black box)."""
+    try:
+        ctx = load_context()
+        state = ctx.load_state()
+        events = list(ctx.events.read())
+        gate_report = mttr_report(events)
+        defect_report = defect_mttr(events)
         rework = rework_report(state)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
@@ -717,15 +834,30 @@ def kpi() -> None:
     table = Table(title="📈 KPI dashboard")
     table.add_column("metric")
     table.add_column("value", overflow="fold")
-    if report.gates or report.open_breaches:
-        overall = f"{report.overall_mttr_seconds}s" if report.overall_mttr_seconds else "n/a"
-        table.add_row("MTTR (all gates)", overall)
-        for m in report.gates:
-            table.add_row(f"  {m.gate_id}", f"MTTR {m.mttr_seconds}s ({m.breaches} breach(es))")
-        for gate_id in report.open_breaches:
+    if gate_report.items or gate_report.open_subjects:
+        overall = (
+            f"{gate_report.overall_mttr_seconds}s" if gate_report.overall_mttr_seconds else "n/a"
+        )
+        table.add_row("MTTR 门禁 (all)", overall)
+        for m in gate_report.items:
+            table.add_row(f"  {m.subject}", f"MTTR {m.mttr_seconds}s ({m.breaches} breach(es))")
+        for gate_id in gate_report.open_subjects:
             table.add_row(f"  {gate_id}", "still red, not yet recovered ⏳")
     else:
-        table.add_row("MTTR", "[dim]no gate breaches recorded[/dim]")
+        table.add_row("MTTR 门禁", "[dim]no gate breaches recorded[/dim]")
+    if defect_report.items or defect_report.open_subjects:
+        overall = (
+            f"{defect_report.overall_mttr_seconds}s"
+            if defect_report.overall_mttr_seconds
+            else "n/a"
+        )
+        table.add_row("MTTR 缺陷 (all)", overall)
+        for m in defect_report.items:
+            table.add_row(f"  {m.subject}", f"MTTR {m.mttr_seconds}s ({m.breaches} fix(es))")
+        for task_id in defect_report.open_subjects:
+            table.add_row(f"  {task_id}", "defect open, fix pending ⏳")
+    else:
+        table.add_row("MTTR 缺陷", "[dim]no defects recorded[/dim]")
     if rework.tasks_done:
         table.add_row(
             "rework rate",

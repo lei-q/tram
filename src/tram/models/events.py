@@ -23,6 +23,8 @@ class EventKind(enum.StrEnum):
     EVM_SNAPSHOT = "evm_snapshot"
     RISK_REGISTERED = "risk_registered"
     TASK_UPDATED = "task_updated"
+    QA_FAILED = "qa_failed"
+    QA_PASSED = "qa_passed"
 
 
 class TramEvent(BaseModel):

@@ -36,13 +36,20 @@ tram artifact generate --all   # 生成 6 类治理工件（自动挂证据，�
 tram gate run g2_quality_gate  # 跑质量门（确定性检查 + 策略决策）
 tram task points T-001 --est 4 --spent 6  # 维护任务点数（EVM 数据源）
 tram evm snapshot              # 计算 SPI/CPI；越界自动登记风险（阈值可配）
-tram kpi                       # 门禁 MTTR + 返工率仪表
+tram qa fail T-001 --note "复现步骤…"      # QA 复现失败 → 自动建返工任务（rework 链）
+tram agent run --task T-002 --role dev --runner claude --prompt "修复"  # 挂到返工任务，注入 dev 角色提示词
+tram qa pass T-002 --note "复现测试转绿"   # QA 验证通过 → 缺陷闭环
+tram kpi                       # 门禁 MTTR + 缺陷 MTTR + 返工率仪表
 tram status                    # 项目状态一览
 tram replay --limit 20         # 回放事件黑匣子
 tram ui                        # 只读线路图 UI（需 pip install 'tram[ui]'）
 ```
 
 接真实引擎：`tram agent run --runner claude --prompt "实现 X"`（需 `claude` CLI；默认在 git worktree 沙箱内执行）。
+
+### 角色提示词（PM / QA / Dev）
+
+`tram init` 会把三份角色模板装进 `.tram/roles/{pm,qa,dev}.md`，可按项目自定义；`tram agent run --role <role>` 渲染模板（注入 `{{ task_id }}` / `{{ task_prompt }}`）后交给引擎。角色分工写在提示词里：PM 只拆解不写码，QA 负责最小复现与 `tram qa fail/pass`，dev 只改相关代码且先复现再修。
 
 ## 目录
 
@@ -52,15 +59,15 @@ src/tram/
 ├── obs/           # JSONL 事件日志（黑匣子）+ OTel 挂钩
 ├── evidence/      # git 证据客户端 + 证据真实性校验
 ├── governance/    # 确定性检查注册表 / OPA+fallback 策略引擎 / Intent Guard / 门禁执行器
-├── metrics/       # EVM 引擎（SPI/CPI 越界入险）+ KPI（MTTR/返工率）——纯确定性
+├── metrics/       # EVM 引擎（SPI/CPI 越界入险）+ KPI（门禁/缺陷 MTTR、返工率）——纯确定性
 ├── artifacts/     # 工件生成器 + Jinja2 模板（证据 frontmatter，确定性渲染）
 ├── ui/            # 只读线路图 UI：FastAPI + SSE + 无构建 vanilla SVG 前端
 ├── sandbox/       # git worktree 沙箱（默认）／docker（可选）
 ├── adapters/      # AgentRunner 协议：claude CLI 适配器 + fake（离线测试）
-└── cli.py         # tram init/status/baseline/gate/guard/agent/cr/artifact/task/evm/kpi/replay/ui
+└── cli.py         # tram init/status/baseline/gate/guard/agent/cr/artifact/task/evm/qa/kpi/replay/ui
 examples/demo-project/   # 端到端冒烟演示（smoke.sh）
 ```
 
 ## 状态
 
-Phase 1 垂直切片 + 只读线路图薄版已完成；Phase 2 进行中（EVM 引擎与越界入险、KPI 仪表已上线）。任务清单与决策记录见 [docs/PLAN.md](docs/PLAN.md)。
+Phase 1 垂直切片 + 只读线路图薄版已完成；Phase 2 进行中（EVM 越界入险、KPI 仪表、QA 复现-修复闭环 + 角色提示词分离已上线）。任务清单与决策记录见 [docs/PLAN.md](docs/PLAN.md)。

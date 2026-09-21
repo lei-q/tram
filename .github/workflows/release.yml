@@ -49,6 +49,7 @@ jobs:
             --paths src \
             --add-data "src/tram/governance/policies${SEP}tram/governance/policies" \
             --add-data "src/tram/artifacts/templates${SEP}tram/artifacts/templates" \
+            --add-data "src/tram/roles${SEP}tram/roles" \
             --add-data "src/tram/ui/static${SEP}tram/ui/static" \
             --collect-all uvicorn \
             scripts/launcher.py

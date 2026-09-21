@@ -16,6 +16,11 @@ def slugify(text: str) -> str:
     return slug or "task"
 
 
+# 提交由 Tram 亲自做：作者身份固定为 tram，不依赖环境里的 git 配置
+# （CI 或裸机可能没有 user.name/email，git 会直接拒绝提交）。
+TRAM_IDENTITY = ("-c", "user.name=tram", "-c", "user.email=tram@localhost")
+
+
 class WorktreeSession:
     def __init__(
         self,
@@ -76,7 +81,7 @@ class WorktreeSession:
         if cached.returncode == 0:
             return None  # nothing to commit
         proc = subprocess.run(
-            ["git", "commit", "-m", message],
+            ["git", *TRAM_IDENTITY, "commit", "-m", message],
             cwd=self.path,
             capture_output=True,
             text=True,

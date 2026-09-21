@@ -5,11 +5,12 @@ from tram.metrics.evm import (
     latest_snapshot,
     save_snapshot,
 )
-from tram.metrics.kpis import MTTRReport, mttr_report, rework_report
+from tram.metrics.kpis import MTTRReport, defect_mttr, mttr_report, rework_report
 
 __all__ = [
     "MTTRReport",
     "compute_snapshot",
+    "defect_mttr",
     "escalate_breaches",
     "evaluate_thresholds",
     "latest_snapshot",
