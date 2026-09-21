@@ -19,7 +19,7 @@ from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance.gate_runner import load_gate_specs
 from tram.metrics.evm import evaluate_thresholds, latest_snapshot
-from tram.metrics.kpis import MTTRReport, defect_mttr, mttr_report, rework_report
+from tram.metrics.kpis import MTTRReport, defect_mttr, escape_report, mttr_report, rework_report
 from tram.models.artifacts import Artifact
 from tram.models.events import TramEvent
 from tram.models.gates import GateResult
@@ -69,8 +69,9 @@ def create_app(repo: Path | None = None) -> FastAPI:
         specs = load_gate_specs(gates_file or ctx.packaged_policies / "gates.yaml")
         crs = CRStore(ctx.crs_dir).open_crs()
         snap = latest_snapshot(ctx)
-        events = ctx.events.read()
+        events = list(ctx.events.read())
         rework = rework_report(state)
+        escape = escape_report(events, state)
         return {
             "project_name": state.project_name,
             "phase": state.phase.value,
@@ -147,6 +148,11 @@ def create_app(repo: Path | None = None) -> FastAPI:
                     "rate": rework.rate,
                     "tasks_with_rework": rework.tasks_with_rework,
                     "tasks_done": rework.tasks_done,
+                },
+                "escape": {
+                    "rate": escape.rate,
+                    "defects_escaped": escape.defects_escaped,
+                    "defects_total": escape.defects_total,
                 },
             },
         }

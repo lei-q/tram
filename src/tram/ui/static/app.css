@@ -107,7 +107,7 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .cr-item code { font-size: 12px; color: var(--ink-soft); }
 
 /* ---- 行车 KPI ---- */
-.kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 10px; margin-top: 10px; }
 .kpi { border-radius: var(--radius); background: var(--paper); padding: 10px 14px; cursor: help; }
 .kpi .num { font-size: 20px; font-weight: 800; }
 .kpi .lbl { font-size: 12px; color: var(--ink-soft); }
@@ -133,6 +133,28 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .wx-desc { flex: 1; min-width: 200px; }
 .wx-score { font-weight: 700; font-size: 13px; }
 .wx-meta { color: var(--ink-soft); font-size: 12px; }
+
+/* ---- 站台审批 ---- */
+.platform { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.platform .empty { color: var(--ink-soft); }
+.platform-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--pending) 14%, var(--paper));
+}
+.platform-icon { font-size: 17px; }
+.platform-desc { flex: 1; min-width: 200px; font-weight: 600; }
+.platform-cmd {
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--card);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
 
 /* ---- 车票夹 ---- */
 .tickets { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }

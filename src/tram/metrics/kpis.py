@@ -39,6 +39,15 @@ class ReworkReport:
     rate: float  # tasks_with_rework / tasks_done
 
 
+@dataclass
+class EscapeReport:
+    """逃逸率：修复验证通过后又复发的缺陷 / 全部缺陷（QA 漏网之鱼）。"""
+
+    defects_total: int  # qa_failed 次数
+    defects_escaped: int  # 复发（同上游任务此前的返工已验证通过）
+    rate: float
+
+
 def _pair_mttr(
     events: list[TramEvent],
     open_pred: Callable[[TramEvent], bool],
@@ -115,4 +124,29 @@ def rework_report(state: ProjectState) -> ReworkReport:
         tasks_with_rework=with_rework,
         rework_events=sum(t.rework_count for t in state.tasks),
         rate=round(with_rework / len(done), 3) if done else 0.0,
+    )
+
+
+def escape_report(events: list[TramEvent], state: ProjectState) -> EscapeReport:
+    """逃逸率 = 复发缺陷 / 全部缺陷。
+
+    复发：同一上游任务此前的返工已 qa pass，之后又 qa fail —— QA 没拦住。
+    """
+    upstream_of = {t.id: t.rework_of for t in state.tasks if t.rework_of}
+    fixed_upstreams: set[str] = set()
+    defects = 0
+    escaped = 0
+    for event in events:
+        if event.kind == EventKind.QA_PASSED:
+            upstream = upstream_of.get(event.refs.get("task", ""))
+            if upstream:
+                fixed_upstreams.add(upstream)
+        elif event.kind == EventKind.QA_FAILED:
+            defects += 1
+            if event.refs.get("task") in fixed_upstreams:
+                escaped += 1
+    return EscapeReport(
+        defects_total=defects,
+        defects_escaped=escaped,
+        rate=round(escaped / defects, 3) if defects else 0.0,
     )

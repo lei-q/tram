@@ -258,12 +258,19 @@ def test_full_governance_slice(git_repo, monkeypatch):
     assert state.task("T-003").status.value == "done"
     assert {t.id for t in state.tasks} == {"T-001", "T-002", "T-003"}
 
-    # 12. defect MTTR pairs qa_failed(T-003) with qa_passed(T-003); rework rate 1/2
+    # 11b. the defect recurs after a verified fix -> escaped (QA missed it)
+    result = runner.invoke(app, ["qa", "fail", "T-002", "--note", "regression", "--by", "qa"])
+    assert result.exit_code == 0, result.output
+
+    # 12. defect MTTR pairs qa_failed(T-003) with qa_passed(T-003); rework 1/2, escape 1/2
     result = runner.invoke(app, ["kpi"], env={"COLUMNS": "220"})
     assert result.exit_code == 0, result.output
     assert "MTTR 缺陷" in result.output
     assert "T-003" in result.output
+    assert "rework rate" in result.output
     assert "50.0%" in result.output  # 1 of 2 done tasks has rework
+    assert "escape rate" in result.output
+    assert "50.0% (1/2" in result.output  # the recurrence counts as escaped
 
     kinds = [e.kind for e in events.read()]
     assert EventKind.QA_FAILED in kinds

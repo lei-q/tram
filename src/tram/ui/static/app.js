@@ -164,6 +164,40 @@ function renderState(state) {
 
   renderKpis(state.kpi);
   renderWeather(state.risks);
+  renderPlatform(state);
+}
+
+/* ---------- 站台审批（只读：列出所有等人的事 + 对应 CLI 命令） ---------- */
+
+function renderPlatform(state) {
+  const list = document.getElementById("platform");
+  const items = [];
+  if (!state.scope_approved) {
+    items.push(["🚏", "范围基线待批 —— G0 放行前提", "tram baseline approve --by <你>"]);
+  }
+  for (const [gateId, status] of Object.entries(state.gate_status)) {
+    if (status === "blocked_pending_human") {
+      items.push(["🚦", `门禁 ${gateId} 三次整改仍红，已升级待人审`, "tram gate run " + gateId + "  # 整改后重跑"]);
+    }
+  }
+  for (const cr of state.open_crs) {
+    items.push(["🔀", `CR ${cr.id}（${cr.type}）绕行待审 · ${cr.paths.join(", ")}`, `tram cr approve|reject ${cr.id} --by <你>`]);
+  }
+  if (state.evm && state.evm.breaches && state.evm.breaches.length) {
+    items.push(["🌧", "EVM 越界已自动入险，需要纠偏决策", "tram evm show  # 看越界详情"]);
+  }
+  if (!items.length) {
+    list.innerHTML = '<li class="empty">站台空无一人 —— 没有在等你的事 ✅</li>';
+    return;
+  }
+  list.innerHTML = items
+    .map(([icon, desc, cmd]) => `
+      <li class="platform-item">
+        <span class="platform-icon">${icon}</span>
+        <span class="platform-desc">${esc(desc)}</span>
+        <code class="platform-cmd">$ ${esc(cmd)}</code>
+      </li>`)
+    .join("");
 }
 
 /* ---------- 行车 KPI ---------- */
@@ -178,16 +212,18 @@ function fmtDuration(sec) {
 function renderKpis(kpi) {
   const wrap = document.getElementById("kpis");
   if (!kpi) { wrap.innerHTML = ""; return; }
-  const gate = kpi.gate_mttr, defect = kpi.defect_mttr, rw = kpi.rework;
+  const gate = kpi.gate_mttr, defect = kpi.defect_mttr, rw = kpi.rework, es = kpi.escape;
   const gateTip = gate.items.map((m) => `${m.subject}: ${fmtDuration(m.mttr_seconds)} ×${m.breaches}`).join("\n")
     + (gate.open_subjects.length ? `\n未恢复: ${gate.open_subjects.join(", ")}` : "");
   const defectTip = defect.items.map((m) => `${m.subject}: ${fmtDuration(m.mttr_seconds)} ×${m.breaches}`).join("\n")
     + (defect.open_subjects.length ? `\n未修复: ${defect.open_subjects.join(", ")}` : "");
   const rwPct = `${Math.round(rw.rate * 100)}%`;
+  const esPct = es ? `${Math.round(es.rate * 100)}% (${es.defects_escaped}/${es.defects_total})` : "—";
   wrap.innerHTML = `
     <div class="kpi" title="${esc(gateTip)}"><div class="num">${fmtDuration(gate.overall_seconds)}</div><div class="lbl">门禁 MTTR${gate.open_subjects.length ? " ⚠" : ""}</div></div>
     <div class="kpi" title="${esc(defectTip)}"><div class="num">${fmtDuration(defect.overall_seconds)}</div><div class="lbl">缺陷 MTTR${defect.open_subjects.length ? " ⚠" : ""}</div></div>
     <div class="kpi ${rw.rate >= 0.5 ? "chip--fail" : ""}"><div class="num">${rwPct}</div><div class="lbl">返工率 (${rw.tasks_with_rework}/${rw.tasks_done})</div></div>
+    <div class="kpi" title="修复验证通过后又复发的缺陷占比"><div class="num">${esPct}</div><div class="lbl">逃逸率</div></div>
   `;
 }
 

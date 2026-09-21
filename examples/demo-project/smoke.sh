@@ -8,6 +8,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="$(mktemp -d)/demo-project"
 mkdir -p "$(dirname "$WORK")"
 cp -R "$HERE" "$WORK"
+# 副本从零开始：剥离源目录里可能残留的运行状态（本机试验过的 .tram/.git 等）
+rm -rf "$WORK/.tram" "$WORK/.git" "$WORK/.coverage" "$WORK/__pycache__"
 cd "$WORK"
 trap 'echo; echo "demo workdir kept at: $WORK"' EXIT
 
@@ -66,8 +68,12 @@ tram agent run --task T-003 --role dev --runner fake --prompt "修复 mul" --fak
 echo "==> QA verifies the fix (expect defect closed)"
 tram qa pass T-003 --note "复现测试转绿" --by "$USER"
 
-echo "==> KPI dashboard (gate MTTR + defect MTTR + rework rate)"
+echo "==> defect recurs after a verified fix (expect escape rate 50%)"
+tram qa fail T-002 --note "复发：修复未生效" --by "$USER"
+
+echo "==> KPI dashboard (gate/defect MTTR + rework/escape rates)"
 tram kpi
+tram kpi | grep -q "escape rate" && echo "   (escape rate counted ✅)"
 
 echo "==> regenerate the risk register (now carries the EVM risks)"
 tram artifact generate risk_register

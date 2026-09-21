@@ -8,7 +8,7 @@ import json
 from typer.testing import CliRunner
 
 from tram.cli import app
-from tram.metrics.kpis import defect_mttr, mttr_report, rework_report
+from tram.metrics.kpis import defect_mttr, escape_report, mttr_report, rework_report
 from tram.models.events import EventKind, TramEvent
 from tram.models.state import ProjectState
 from tram.models.task import TaskRecord, TaskStatus
@@ -115,6 +115,31 @@ def test_defect_mttr_open_defect_has_no_pass_yet():
     report = defect_mttr(events)
     assert report.open_subjects == ["T-002"]
     assert report.items == []
+
+
+def test_escape_report_counts_recurrence_after_verified_fix():
+    state = ProjectState(
+        project_name="demo",
+        tasks=[
+            TaskRecord(id="T-001", title="origin", status=TaskStatus.DONE, rework_count=2),
+            TaskRecord(id="T-002", title="fix 1", status=TaskStatus.DONE, rework_of="T-001"),
+            TaskRecord(id="T-003", title="fix 2", status=TaskStatus.TODO, rework_of="T-001"),
+        ],
+    )
+    events = [
+        # first defect, fixed and verified
+        _qa_ev(1, _t(0), EventKind.QA_FAILED, task="T-001", rework="T-002"),
+        _qa_ev(2, _t(30), EventKind.QA_PASSED, task="T-002"),
+        # recurrence: the fix did not hold -> escaped
+        _qa_ev(3, _t(60), EventKind.QA_FAILED, task="T-001", rework="T-003"),
+    ]
+    report = escape_report(events, state)
+    assert (report.defects_total, report.defects_escaped, report.rate) == (2, 1, 0.5)
+
+
+def test_escape_report_zero_when_no_defects():
+    report = escape_report([], ProjectState(project_name="x"))
+    assert (report.defects_total, report.defects_escaped, report.rate) == (0, 0, 0.0)
 
 
 def test_rework_report():

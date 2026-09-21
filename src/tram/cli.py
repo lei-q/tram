@@ -29,7 +29,7 @@ from tram.metrics.evm import (
     latest_snapshot,
     save_snapshot,
 )
-from tram.metrics.kpis import defect_mttr, mttr_report, rework_report
+from tram.metrics.kpis import defect_mttr, escape_report, mttr_report, rework_report
 from tram.models.cr import Approval, CRStatus, CRType
 from tram.models.events import EventKind
 from tram.models.gates import GateStatus
@@ -820,7 +820,7 @@ def qa_pass(
 
 @app.command()
 def kpi() -> None:
-    """KPI dashboard: gate/defect MTTR + rework rate (computed from the black box)."""
+    """KPI dashboard: gate/defect MTTR + rework/escape rates (from the black box)."""
     try:
         ctx = load_context()
         state = ctx.load_state()
@@ -828,6 +828,7 @@ def kpi() -> None:
         gate_report = mttr_report(events)
         defect_report = defect_mttr(events)
         rework = rework_report(state)
+        escape = escape_report(events, state)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -866,6 +867,14 @@ def kpi() -> None:
         )
     else:
         table.add_row("rework rate", "[dim]no done tasks yet[/dim]")
+    if escape.defects_total:
+        table.add_row(
+            "escape rate",
+            f"{escape.rate:.1%} ({escape.defects_escaped}/{escape.defects_total} defects"
+            " recurred after a verified fix)",
+        )
+    else:
+        table.add_row("escape rate", "[dim]no defects recorded[/dim]")
     console.print(table)
 
 
