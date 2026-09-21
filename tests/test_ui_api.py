@@ -56,6 +56,66 @@ def test_state_includes_evm_snapshot(ctx, git_repo):
     assert len(evm["breaches"]) == 1 and "CPI" in evm["breaches"][0]
 
 
+def test_state_includes_risks_and_kpis(ctx, git_repo):
+    import json as _json
+
+    from tram.models.risk import RiskItem, RiskStatus, RiskStrategy
+    from tram.models.task import TaskRecord, TaskStatus
+
+    client = _client(git_repo)
+    empty = client.get("/api/state").json()
+    assert empty["risks"] == []
+    assert empty["kpi"]["gate_mttr"]["overall_seconds"] == 0.0
+    assert empty["kpi"]["defect_mttr"]["items"] == []
+    assert empty["kpi"]["rework"]["rate"] == 0.0
+
+    state = ctx.load_state()
+    state.risks.append(
+        RiskItem(
+            id="r-evm-2026-09-21-spi",
+            description="SPI 0.5 低于下限 0.85",
+            probability=3,
+            impact=4,
+            strategy=RiskStrategy.MITIGATE,
+            owner="tram.evm",
+            trigger_event_seq=33,
+        )
+    )
+    state.risks.append(
+        RiskItem(
+            id="r-old",
+            description="closed ones stay off the weather board",
+            probability=1,
+            impact=1,
+            status=RiskStatus.CLOSED,
+        )
+    )
+    state.tasks.append(TaskRecord(id="T-001", title="a", status=TaskStatus.DONE, rework_count=1))
+    ctx.state_store.save(state)
+    # a gate breach recovered by a later pass -> MTTR 1h
+    lines = [
+        {
+            "seq": 100 + i,
+            "ts": f"2026-09-21T1{i}:00:00+00:00",
+            "kind": "gate_evaluated",
+            "source": "gate_runner",
+            "data": {"status": s},
+            "refs": {"gate": "g2_quality_gate"},
+        }
+        for i, s in ((0, "fail"), (1, "pass"))
+    ]
+    with ctx.events.path.open("a", encoding="utf-8") as fh:
+        for line in lines:
+            fh.write(_json.dumps(line) + "\n")
+
+    data = client.get("/api/state").json()
+    assert [r["id"] for r in data["risks"]] == ["r-evm-2026-09-21-spi"]
+    assert data["risks"][0]["trigger_event_seq"] == 33
+    kpi = data["kpi"]
+    assert kpi["gate_mttr"]["overall_seconds"] == 3600.0
+    assert kpi["rework"]["rate"] == 1.0 and kpi["rework"]["tasks_with_rework"] == 1
+
+
 def test_artifacts_endpoint_empty_then_filled(ctx, git_repo):
     client = _client(git_repo)
     assert client.get("/api/artifacts").json() == []

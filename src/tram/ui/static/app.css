@@ -106,6 +106,34 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .cr-item { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cr-item code { font-size: 12px; color: var(--ink-soft); }
 
+/* ---- 行车 KPI ---- */
+.kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+.kpi { border-radius: var(--radius); background: var(--paper); padding: 10px 14px; cursor: help; }
+.kpi .num { font-size: 20px; font-weight: 800; }
+.kpi .lbl { font-size: 12px; color: var(--ink-soft); }
+
+/* ---- 风险气象台 ---- */
+.weather { display: grid; gap: 8px; }
+.weather .empty { color: var(--ink-soft); }
+.wx-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  background: var(--paper);
+  border-left: 6px solid var(--line);
+}
+.wx--cloud { border-left-color: color-mix(in srgb, var(--ok) 60%, transparent); }
+.wx--rain { border-left-color: var(--pending); }
+.wx--storm { border-left-color: var(--fail); }
+.wx-icon { font-size: 20px; }
+.wx-id { font-weight: 800; font-family: ui-monospace, monospace; font-size: 13px; }
+.wx-desc { flex: 1; min-width: 200px; }
+.wx-score { font-weight: 700; font-size: 13px; }
+.wx-meta { color: var(--ink-soft); font-size: 12px; }
+
 /* ---- 车票夹 ---- */
 .tickets { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .ticket {

@@ -161,6 +161,65 @@ function renderState(state) {
       list.appendChild(li);
     }
   }
+
+  renderKpis(state.kpi);
+  renderWeather(state.risks);
+}
+
+/* ---------- 行车 KPI ---------- */
+
+function fmtDuration(sec) {
+  if (!sec) return "—";
+  if (sec < 90) return `${Math.round(sec)}s`;
+  if (sec < 5400) return `${Math.round(sec / 60)}min`;
+  return `${(sec / 3600).toFixed(1)}h`;
+}
+
+function renderKpis(kpi) {
+  const wrap = document.getElementById("kpis");
+  if (!kpi) { wrap.innerHTML = ""; return; }
+  const gate = kpi.gate_mttr, defect = kpi.defect_mttr, rw = kpi.rework;
+  const gateTip = gate.items.map((m) => `${m.subject}: ${fmtDuration(m.mttr_seconds)} ×${m.breaches}`).join("\n")
+    + (gate.open_subjects.length ? `\n未恢复: ${gate.open_subjects.join(", ")}` : "");
+  const defectTip = defect.items.map((m) => `${m.subject}: ${fmtDuration(m.mttr_seconds)} ×${m.breaches}`).join("\n")
+    + (defect.open_subjects.length ? `\n未修复: ${defect.open_subjects.join(", ")}` : "");
+  const rwPct = `${Math.round(rw.rate * 100)}%`;
+  wrap.innerHTML = `
+    <div class="kpi" title="${esc(gateTip)}"><div class="num">${fmtDuration(gate.overall_seconds)}</div><div class="lbl">门禁 MTTR${gate.open_subjects.length ? " ⚠" : ""}</div></div>
+    <div class="kpi" title="${esc(defectTip)}"><div class="num">${fmtDuration(defect.overall_seconds)}</div><div class="lbl">缺陷 MTTR${defect.open_subjects.length ? " ⚠" : ""}</div></div>
+    <div class="kpi ${rw.rate >= 0.5 ? "chip--fail" : ""}"><div class="num">${rwPct}</div><div class="lbl">返工率 (${rw.tasks_with_rework}/${rw.tasks_done})</div></div>
+  `;
+}
+
+/* ---------- 风险气象台 ---------- */
+
+// P×I 打分定天气：确定性映射，无主观措辞。
+function weather(score) {
+  if (score >= 15) return { icon: "⛈", label: "雷雨", cls: "wx--storm" };
+  if (score >= 8) return { icon: "🌦", label: "阵雨", cls: "wx--rain" };
+  return { icon: "🌤", label: "多云", cls: "wx--cloud" };
+}
+
+function renderWeather(risks) {
+  const wrap = document.getElementById("weather");
+  if (!risks.length) {
+    wrap.innerHTML = '<span class="empty">全线晴朗，风险册是空的 🌈 —— EVM 越界 / 门禁红线会自动入险</span>';
+    return;
+  }
+  wrap.innerHTML = risks
+    .map((r) => {
+      const score = r.probability * r.impact;
+      const wx = weather(score);
+      return `
+      <div class="wx-row ${wx.cls}">
+        <span class="wx-icon">${wx.icon}</span>
+        <span class="wx-id">${esc(r.id)}</span>
+        <span class="wx-desc">${esc(r.description)}</span>
+        <span class="wx-score">P${r.probability}×I${r.impact}=${score}</span>
+        <span class="wx-meta">${esc(r.strategy)} · ${esc(r.owner || "—")}${r.trigger_event_seq != null ? ` · #${r.trigger_event_seq}` : ""}</span>
+      </div>`;
+    })
+    .join("");
 }
 
 function renderTickets(artifacts) {

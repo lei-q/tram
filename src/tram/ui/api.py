@@ -19,9 +19,11 @@ from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance.gate_runner import load_gate_specs
 from tram.metrics.evm import evaluate_thresholds, latest_snapshot
+from tram.metrics.kpis import MTTRReport, defect_mttr, mttr_report, rework_report
 from tram.models.artifacts import Artifact
 from tram.models.events import TramEvent
 from tram.models.gates import GateResult
+from tram.models.risk import RiskStatus
 from tram.models.task import TaskStatus
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -42,6 +44,17 @@ REFRESH_KINDS = {
 }
 
 
+def _mttr_json(report: MTTRReport) -> dict:
+    return {
+        "overall_seconds": report.overall_mttr_seconds,
+        "open_subjects": report.open_subjects,
+        "items": [
+            {"subject": m.subject, "breaches": m.breaches, "mttr_seconds": m.mttr_seconds}
+            for m in report.items
+        ],
+    }
+
+
 def create_app(repo: Path | None = None) -> FastAPI:
     ctx: TramContext = load_context(repo)
     app = FastAPI(title="tram-ui", docs_url=None, redoc_url=None)
@@ -56,6 +69,8 @@ def create_app(repo: Path | None = None) -> FastAPI:
         specs = load_gate_specs(gates_file or ctx.packaged_policies / "gates.yaml")
         crs = CRStore(ctx.crs_dir).open_crs()
         snap = latest_snapshot(ctx)
+        events = ctx.events.read()
+        rework = rework_report(state)
         return {
             "project_name": state.project_name,
             "phase": state.phase.value,
@@ -111,6 +126,29 @@ def create_app(repo: Path | None = None) -> FastAPI:
                 if state.gate_history
                 else None
             ),
+            "risks": [
+                {
+                    "id": r.id,
+                    "description": r.description,
+                    "probability": r.probability,
+                    "impact": r.impact,
+                    "strategy": r.strategy.value,
+                    "owner": r.owner,
+                    "status": r.status.value,
+                    "trigger_event_seq": r.trigger_event_seq,
+                }
+                for r in state.risks
+                if r.status != RiskStatus.CLOSED
+            ],
+            "kpi": {
+                "gate_mttr": _mttr_json(mttr_report(events)),
+                "defect_mttr": _mttr_json(defect_mttr(events)),
+                "rework": {
+                    "rate": rework.rate,
+                    "tasks_with_rework": rework.tasks_with_rework,
+                    "tasks_done": rework.tasks_done,
+                },
+            },
         }
 
     @app.get("/api/state")
