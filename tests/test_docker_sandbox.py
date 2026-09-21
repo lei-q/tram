@@ -41,7 +41,20 @@ def _docker_ready() -> bool:
     return shutil.which("docker") is not None and docker_available()
 
 
-@pytest.mark.skipif(not _docker_ready(), reason="docker daemon not available")
+def _image_local(image: str) -> bool:
+    """活体测试要求镜像已在本地（--pull never 不会偷偷拉）。"""
+    if shutil.which("docker") is None:
+        return False
+    proc = subprocess.run(
+        ["docker", "image", "inspect", image], capture_output=True, timeout=15
+    )
+    return proc.returncode == 0
+
+
+@pytest.mark.skipif(
+    not (_docker_ready() and _image_local("busybox:latest")),
+    reason="docker daemon or local busybox:latest image not available",
+)
 def test_docker_sandbox_writes_reach_host_workspace(tmp_path):
     workspace = tmp_path / "ws"
     workspace.mkdir()
