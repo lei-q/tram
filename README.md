@@ -44,6 +44,7 @@ tram kpi                       # 门禁 MTTR + 缺陷 MTTR + 返工率仪表
 tram status                    # 项目状态一览
 tram replay --limit 20         # 回放事件黑匣子
 tram ui                        # 只读线路图 UI（需 pip install 'tram[ui]'）
+tram ui --approve              # 同上，并开启站台审批（署名放行，写事件流）
 ```
 
 接真实引擎：`tram agent run --runner claude --prompt "实现 X"`（需 `claude` CLI；默认在 git worktree 沙箱内执行）。共享环境可加 `--sandbox docker`：agent 命令进容器执行（镜像可配 `tram.yaml` 的 `docker_image`，需镜像内装好引擎 CLI），Intent Guard / 提交 / 事件流仍留在宿主机——容器管执行隔离，git 管变更隔离。
@@ -59,7 +60,7 @@ src/tram/
 ├── models/        # ProjectState / 工件 / 门禁 / CR / 风险 / EVM / 事件（Pydantic）
 ├── obs/           # JSONL 事件日志（黑匣子）+ OTel 挂钩
 ├── evidence/      # git 证据客户端 + 证据真实性校验
-├── governance/    # 确定性检查注册表 / OPA+fallback 策略引擎 / Intent Guard / 门禁执行器
+├── governance/    # 确定性检查注册表 / OPA+fallback 策略引擎 / Intent Guard / 门禁执行器 / HITL 审批（CLI+UI 同路径）
 ├── metrics/       # EVM 引擎（SPI/CPI 越界入险）+ KPI（门禁/缺陷 MTTR、返工率）——纯确定性
 ├── orchestration/ # 阶段推进纯函数 + 治理主线状态机（LangGraph 包装/零依赖解释器）
 ├── artifacts/     # 工件生成器 + Jinja2 模板（证据 frontmatter，确定性渲染）
@@ -72,4 +73,4 @@ examples/demo-project/   # 端到端冒烟演示（smoke.sh）
 
 ## 状态
 
-Phase 1 垂直切片 + 只读线路图薄版已完成；Phase 2 进行中（EVM 越界入险、KPI 仪表、QA 复现-修复闭环 + 角色提示词分离已上线）。任务清单与决策记录见 [docs/PLAN.md](docs/PLAN.md)。
+Phase 1 垂直切片 + 只读线路图薄版已完成；Phase 2 进行中（EVM 越界入险、KPI 仪表、QA 复现-修复闭环 + 角色提示词分离、治理主线状态机 `tram run`、docker 沙箱、UI 站台审批直连事件流已上线）。任务清单与决策记录见 [docs/PLAN.md](docs/PLAN.md)。

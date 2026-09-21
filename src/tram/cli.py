@@ -20,6 +20,7 @@ from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
 from tram.context import ROLE_KINDS, TramContext, init_project, load_context
 from tram.cr_store import CRStore
+from tram.governance import approvals
 from tram.governance.gate_runner import GateRunner
 from tram.governance.intent_guard import IntentGuard
 from tram.metrics.evm import (
@@ -30,7 +31,7 @@ from tram.metrics.evm import (
     save_snapshot,
 )
 from tram.metrics.kpis import defect_mttr, escape_report, mttr_report, rework_report
-from tram.models.cr import Approval, CRStatus, CRType
+from tram.models.cr import CRType
 from tram.models.events import EventKind
 from tram.models.gates import GateStatus
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
@@ -177,28 +178,7 @@ def baseline_approve(
     """HITL: approve the scope baseline (enables G0)."""
     try:
         ctx = load_context()
-        state = ctx.load_state()
-        baseline = ctx.load_baseline()
-        baseline.approved_by = by
-        baseline.approved_at = _utcnow()
-        baseline.dump(ctx.baseline_file)
-        state.human_approvals.append(
-            Approval(
-                decision="approved",
-                by=by,
-                at=_utcnow(),
-                kind="scope_baseline",
-                artifact_ref=f"scope-baseline@v{baseline.version}",
-                note=note,
-            )
-        )
-        state.baselines["scope"] = f"scope-baseline@v{baseline.version}"
-        ctx.state_store.save(state)
-        ctx.events.append(
-            EventKind.HUMAN_DECISION,
-            source="tram.baseline",
-            data={"decision": "approved", "kind": "scope_baseline", "by": by, "note": note},
-        )
+        approvals.approve_baseline(ctx, by, note)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -213,23 +193,7 @@ def approve_release(
     """HITL: approve the release (unblocks g3_closing_gate -> 终点站)."""
     try:
         ctx = load_context()
-        state = ctx.load_state()
-        state.human_approvals.append(
-            Approval(
-                decision="approved",
-                by=by,
-                at=_utcnow(),
-                kind="release",
-                artifact_ref="release",
-                note=note,
-            )
-        )
-        ctx.state_store.save(state)
-        ctx.events.append(
-            EventKind.HUMAN_DECISION,
-            source="tram.approve",
-            data={"decision": "approved", "kind": "release", "by": by, "note": note},
-        )
+        approvals.approve_release(ctx, by, note)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -555,62 +519,11 @@ def cr_approve(
 def _decide_cr(cr_id: str, decision: str, by: str, note: str) -> None:
     try:
         ctx = load_context()
-        store = CRStore(ctx.crs_dir)
-        cr = store.load(cr_id)
-        if cr is None:
-            raise ValueError(f"unknown CR: {cr_id}")
-        state = ctx.load_state()
-
-        cr.approvals.append(
-            Approval(
-                decision=decision,
-                by=by,
-                at=_utcnow(),
-                kind="cr",
-                artifact_ref=cr.id,
-                note=note,
-            )
-        )
-        cr.status = CRStatus.REJECTED if decision == "rejected" else CRStatus.APPROVED
-        store.save(cr)
-
-        if decision == "approved" and cr.type == CRType.SCOPE:
-            # 变更即分支：批准的范围变更直接进入基线（版本 +1），并视为已实施
-            baseline = ctx.load_baseline()
-            baseline.allowed_paths.extend(p for p in cr.impact.changed_paths)
-            baseline.version += 1
-            baseline.dump(ctx.baseline_file)
-            cr.status = CRStatus.IMPLEMENTED
-            store.save(cr)
-            state.baselines["scope"] = f"scope-baseline@v{baseline.version}"
-            console.print(
-                f"[green]baseline v{baseline.version}: added {cr.impact.changed_paths}[/green]"
-            )
-
-        if cr.id in state.open_crs and cr.status not in (
-            CRStatus.DRAFT,
-            CRStatus.ANALYZING,
-            CRStatus.AWAITING_HUMAN,
-            CRStatus.APPROVED,
-        ):
-            state.open_crs.remove(cr.id)
-        ctx.state_store.save(state)
-        ctx.events.append(
-            EventKind.CR_STATUS_CHANGED,
-            source="tram.cr",
-            data={"cr": cr.id, "status": cr.status.value, "by": by, "note": note},
-            refs={"cr": cr.id},
-        )
-        ctx.events.append(
-            EventKind.HUMAN_DECISION,
-            source="tram.cr",
-            data={"decision": decision, "kind": "cr", "cr": cr.id, "by": by, "note": note},
-            refs={"cr": cr.id},
-        )
+        cr_status = approvals.decide_cr(ctx, cr_id, decision, by, note)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
-    console.print(f"[green]cr {cr_id} -> {cr.status.value} ✅[/green]")
+    console.print(f"[green]cr {cr_id} -> {cr_status.value} ✅[/green]")
 
 
 @artifact_app.command("list")
@@ -981,8 +894,11 @@ def ui(
     host: Annotated[str, typer.Option(help="bind host")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="port")] = 8417,
     no_open: Annotated[bool, typer.Option("--no-open", help="do not open the browser")] = False,
+    approve: Annotated[
+        bool, typer.Option("--approve", help="开启站台审批（写事件流，与 CLI 同路径）")
+    ] = False,
 ) -> None:
-    """Launch the read-only route-map UI (requires tram[ui])."""
+    """Launch the route-map UI (read-only by default; requires tram[ui])."""
     try:
         import uvicorn
 
@@ -1000,10 +916,18 @@ def ui(
     import webbrowser
 
     url = f"http://{host}:{port}"
-    console.print(f"🚋 tram ui → {url}（Ctrl-C 退出；只读视图，操作请回 CLI）")
+    if approve:
+        console.print(
+            f"🚋 tram ui → {url}（Ctrl-C 退出）\n"
+            "[yellow]⚠️ 站台审批已开启：页面上的放行会写入事件流（与 CLI 同一代码路径）[/yellow]"
+        )
+    else:
+        console.print(f"🚋 tram ui → {url}（Ctrl-C 退出；只读视图，操作请回 CLI）")
     if not no_open:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-    uvicorn.run(create_app(repo), host=host, port=port, log_level="warning")
+    uvicorn.run(
+        create_app(repo, allow_approvals=approve), host=host, port=port, log_level="warning"
+    )
 
 
 def _force_utf8_stdio() -> None:

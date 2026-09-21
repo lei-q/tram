@@ -156,6 +156,74 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   padding: 2px 8px;
 }
 
+/* 站台审批（--approve 时）：圆头小按钮 + 内联署名表单 */
+.platform-act {
+  border: 2px solid color-mix(in srgb, var(--pending) 60%, var(--paper));
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.platform-act:hover { background: color-mix(in srgb, var(--pending) 22%, var(--paper)); }
+.platform-form {
+  flex-basis: 100%;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.platform-form input {
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 10px;
+}
+.platform-form input[name="by"] { min-width: 140px; }
+.platform-form button {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+.platform-form .act-approve { border-color: color-mix(in srgb, var(--ok) 55%, var(--paper)); }
+.platform-form .act-reject { border-color: color-mix(in srgb, var(--fail) 55%, var(--paper)); }
+.platform-form .act-cancel { border-style: dashed; font-weight: 400; color: var(--ink-soft); }
+
+/* 审批结果 toast（不挡视图，滑入滑出） */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--card);
+  color: var(--ink);
+  border: 2px solid var(--ok);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 16px;
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  pointer-events: none;
+  max-width: min(90vw, 480px);
+}
+#toast.toast--show { transform: translateX(-50%) translateY(0); opacity: 1; }
+#toast.toast--err { border-color: var(--fail); }
+@media (prefers-reduced-motion: reduce) {
+  #toast { transition: none; }
+}
+
 /* ---- 车票夹 ---- */
 .tickets { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .ticket {

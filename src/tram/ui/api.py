@@ -1,22 +1,29 @@
-"""Read-only UI API: state / artifacts / events + SSE live tail.
+"""UI API: state / artifacts / events + SSE live tail; optional HITL approvals.
 
-The UI is the cab window, not a second brain: it only reads .tram/ and
-streams the black box. Every mutation stays in the CLI (and its gates).
+The UI is the cab window, not a second brain: it reads .tram/ and streams the
+black box. 默认只读；`tram ui --approve` 开启审批后，POST /api/approve 仍走
+governance.approvals 的同一条写账路径（与 CLI 完全一致），只是把人的决定
+写进事件流——不是绕过门禁的按钮。写模式带双 CSRF 防护（会话令牌 + Origin 校验）。
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from collections import defaultdict
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
+from tram.governance import approvals
 from tram.governance.gate_runner import load_gate_specs
 from tram.metrics.evm import evaluate_thresholds, latest_snapshot
 from tram.metrics.kpis import MTTRReport, defect_mttr, escape_report, mttr_report, rework_report
@@ -55,8 +62,18 @@ def _mttr_json(report: MTTRReport) -> dict:
     }
 
 
-def create_app(repo: Path | None = None) -> FastAPI:
+class ApprovalRequest(BaseModel):
+    """站台审批请求：UI 把署名的人工决定 POST 进事件流。"""
+
+    action: Literal["baseline", "release", "cr_approve", "cr_reject"]
+    id: str = ""
+    by: str
+    note: str = ""
+
+
+def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastAPI:
     ctx: TramContext = load_context(repo)
+    approval_token = secrets.token_urlsafe(24) if allow_approvals else ""
     app = FastAPI(title="tram-ui", docs_url=None, redoc_url=None)
 
     def snapshot() -> dict:
@@ -186,6 +203,44 @@ def create_app(repo: Path | None = None) -> FastAPI:
     def api_events(limit: int = 100, kind: str | None = None) -> list[dict]:
         events = list(ctx.events.read(kind=kind))
         return [e.model_dump(mode="json") for e in events[-limit:]]
+
+    @app.get("/api/ui-config")
+    def api_ui_config() -> dict:
+        # 同源可读（无 CORS 头，跨域 JS 读不到响应），令牌只发给本页
+        return {"approvals_enabled": allow_approvals, "token": approval_token}
+
+    @app.post("/api/approve")
+    def api_approve(req: ApprovalRequest, request: Request) -> dict:
+        if not allow_approvals:
+            raise HTTPException(403, "只读 UI（默认）——`tram ui --approve` 才开启站台审批")
+        supplied = request.headers.get("x-tram-token", "")
+        if supplied != approval_token or not approval_token:
+            raise HTTPException(403, "bad approval token")
+        origin = request.headers.get("origin")
+        if origin and urlparse(origin).netloc != request.headers.get("host", ""):
+            raise HTTPException(403, f"cross-origin approval rejected: {origin}")
+        if not req.by.strip():
+            raise HTTPException(422, "审批要署名：by 不能为空")
+        source = "tram.ui"
+        try:
+            if req.action == "baseline":
+                version = approvals.approve_baseline(ctx, req.by, req.note, source=source)
+                return {"ok": True, "detail": f"scope baseline approved ✅（v{version}）"}
+            if req.action == "release":
+                approvals.approve_release(ctx, req.by, req.note, source=source)
+                return {"ok": True, "detail": "release approved ✅ — `tram run` 可以开到终点站了"}
+            # cr_approve / cr_reject
+            if not req.id.strip():
+                raise HTTPException(422, "CR 审批需要 id")
+            decision = "approved" if req.action == "cr_approve" else "rejected"
+            status = approvals.decide_cr(ctx, req.id, decision, req.by, req.note, source=source)
+            return {"ok": True, "detail": f"CR {req.id} -> {status.value} ✅"}
+        except HTTPException:
+            raise
+        except ValueError as exc:  # unknown CR 等
+            raise HTTPException(404, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, str(exc)) from exc
 
     @app.get("/api/stream")
     def api_stream() -> StreamingResponse:

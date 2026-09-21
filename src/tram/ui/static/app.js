@@ -1,4 +1,5 @@
-/* Tram 薄版 UI - 无构建 vanilla JS。数据全部来自只读 API；任何修改都回 CLI。 */
+/* Tram 薄版 UI - 无构建 vanilla JS。数据全部来自只读 API；
+   仅当 `tram ui --approve` 时，站台审批按钮可用（写事件流，与 CLI 同路径）。 */
 "use strict";
 
 const PHASES = [
@@ -167,41 +168,129 @@ function renderState(state) {
   renderPlatform(state);
 }
 
-/* ---------- 站台审批（只读：列出所有等人的事 + 对应 CLI 命令） ---------- */
+/* ---------- 站台审批（只读列出待人工的事；--approve 时可就地署名放行） ---------- */
+
+const uiConfig = { approvals_enabled: false, token: "" };
 
 function renderPlatform(state) {
   const list = document.getElementById("platform");
   const items = [];
   if (!state.scope_approved) {
-    items.push(["🚏", "范围基线待批 —— G0 放行前提", "tram baseline approve --by <你>"]);
+    items.push({ icon: "🚏", desc: "范围基线待批 —— G0 放行前提", cmd: "tram baseline approve --by <你>", act: { action: "baseline", label: "批准基线" } });
   }
   for (const [gateId, status] of Object.entries(state.gate_status)) {
     if (status === "blocked_pending_human") {
       if (gateId === "g3_closing_gate") {
-        items.push(["🚦", "门禁 g3 待 release 人工放行", "tram approve release --by <你>"]);
+        items.push({ icon: "🚦", desc: "门禁 g3 待 release 人工放行", cmd: "tram approve release --by <你>", act: { action: "release", label: "放行 release" } });
       } else {
-        items.push(["🚦", `门禁 ${gateId} 三次整改仍红，已升级待人审`, "tram gate run " + gateId + "  # 整改后重跑"]);
+        items.push({ icon: "🚦", desc: `门禁 ${gateId} 三次整改仍红，已升级待人审`, cmd: "tram gate run " + gateId + "  # 整改后重跑" });
       }
     }
   }
   for (const cr of state.open_crs) {
-    items.push(["🔀", `CR ${cr.id}（${cr.type}）绕行待审 · ${cr.paths.join(", ")}`, `tram cr approve|reject ${cr.id} --by <你>`]);
+    items.push({ icon: "🔀", desc: `CR ${cr.id}（${cr.type}）绕行待审 · ${cr.paths.join(", ")}`, cmd: `tram cr approve|reject ${cr.id} --by <你>`, act: { action: "cr", id: cr.id, label: "裁决 CR" } });
   }
   if (state.evm && state.evm.breaches && state.evm.breaches.length) {
-    items.push(["🌧", "EVM 越界已自动入险，需要纠偏决策", "tram evm show  # 看越界详情"]);
+    items.push({ icon: "🌧", desc: "EVM 越界已自动入险，需要纠偏决策", cmd: "tram evm show  # 看越界详情" });
   }
   if (!items.length) {
     list.innerHTML = '<li class="empty">站台空无一人 —— 没有在等你的事 ✅</li>';
     return;
   }
   list.innerHTML = items
-    .map(([icon, desc, cmd]) => `
-      <li class="platform-item">
-        <span class="platform-icon">${icon}</span>
-        <span class="platform-desc">${esc(desc)}</span>
-        <code class="platform-cmd">$ ${esc(cmd)}</code>
-      </li>`)
+    .map((it, i) => {
+      const writable = uiConfig.approvals_enabled && it.act;
+      const buttons = writable
+        ? `<button class="platform-act" data-i="${i}">${esc(it.act.label)}</button>`
+        : "";
+      const action = it.act ? it.act.action : "";
+      const crId = it.act && it.act.id ? it.act.id : "";
+      return `
+      <li class="platform-item" data-i="${i}" data-action="${action}" data-id="${crId}">
+        <span class="platform-icon">${it.icon}</span>
+        <span class="platform-desc">${esc(it.desc)}</span>
+        <code class="platform-cmd">$ ${esc(it.cmd)}</code>
+        ${buttons}
+        <form class="platform-form" hidden data-i="${i}">
+          <input name="by" placeholder="署名（谁批的）" required>
+          <input name="note" placeholder="备注（可空）">
+          ${action === "cr"
+            ? `<button type="submit" class="act-approve" data-decision="approve">同意</button><button type="submit" class="act-reject" data-decision="reject">驳回</button>`
+            : `<button type="submit">确认放行</button>`}
+          <button type="button" class="act-cancel">取消</button>
+        </form>
+      </li>`;
+    })
     .join("");
+}
+
+document.getElementById("platform").addEventListener("click", (ev) => {
+  const act = ev.target.closest(".platform-act");
+  if (act) {
+    const item = act.closest(".platform-item");
+    const form = item.querySelector(".platform-form");
+    form.hidden = !form.hidden;
+    if (!form.hidden) form.querySelector('[name="by"]').focus();
+    return;
+  }
+  if (ev.target.closest(".act-cancel")) {
+    const form = ev.target.closest(".platform-form");
+    form.hidden = true;
+    form.reset();
+  }
+});
+
+document.getElementById("platform").addEventListener("submit", (ev) => {
+  const form = ev.target.closest(".platform-form");
+  if (!form) return;
+  ev.preventDefault();
+  submitApproval(form, ev.submitter ? ev.submitter.dataset.decision : "approve");
+});
+
+async function submitApproval(form, decision) {
+  const item = form.closest(".platform-item");
+  const idx = Number(form.dataset.i);
+  const by = form.querySelector('[name="by"]').value.trim();
+  const note = form.querySelector('[name="note"]').value.trim();
+  if (!by) { toast("审批要署名 ✍️", true); return; }
+  let action;
+  if (item.dataset.action === "cr") {
+    action = decision === "reject" ? "cr_reject" : "cr_approve";
+  } else {
+    action = item.dataset.action;
+  }
+  let payload;
+  if (action === "cr_approve" || action === "cr_reject") {
+    payload = { action, id: item.dataset.id, by, note };
+  } else {
+    payload = { action, by, note };
+  }
+  try {
+    const res = await fetch("/api/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json();
+    toast(res.ok ? body.detail : (body.detail || "审批失败"), !res.ok);
+    if (res.ok) { form.hidden = true; form.reset(); refresh(); }
+  } catch (err) {
+    toast("审批请求失败：" + err, true);
+  }
+}
+
+function toast(msg, isErr) {
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.toggle("toast--err", Boolean(isErr));
+  el.classList.add("toast--show");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("toast--show"), 4000);
 }
 
 /* ---------- 行车 KPI ---------- */
@@ -309,6 +398,11 @@ async function refresh() {
 
 async function boot() {
   buildMap();
+  try {
+    Object.assign(uiConfig, await fetch("/api/ui-config").then((r) => r.json()));
+  } catch (err) {
+    console.error("ui-config failed", err);
+  }
   const events = await fetch("/api/events?limit=60").then((r) => r.json());
   for (const ev of events.reverse()) prependEvent(ev);
   await refresh();

@@ -97,7 +97,9 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第五批：docker 沙箱）**：`tram agent run --sandbox docker`——agent 命令经 `docker run` 进容器执行（worktree bind-mount，`--pull never` 不偷偷拉镜像，`docker_image` 可配），Intent Guard / Tram 提交 / 事件流留在宿主机：容器管执行隔离、git 管变更隔离（R3 落地）。适配器拆出 `build_cmd`/`parse`，任何满足该形状的 runner 都能被沙箱包装。
 
-**待做**：UI 完整版剩余（React 版评估、审批动作直连事件流的形态）。
+**已完成（第六批：UI 审批直连事件流）**：HITL 审批收敛为一条共享代码路径 `governance/approvals.py`（baseline / release / CR 裁决，CLI 与 UI 共用，入口 source 如实记录 `tram.cli.*` / `tram.ui`）；UI 默认仍只读，`tram ui --approve` 开启站台审批——站台上每条待人工事项出现署名表单（by 必填），放行写的是与 CLI 完全相同的事件流记录，不是绕过门禁的按钮；写模式带双 CSRF 防护（每会话令牌 + Origin 校验），共享环境不开启即保持只读。
+
+**D8 补充评估（React 版，2026-09）**：薄版 vanilla（无构建、零 Node 工具链、静态资源直接进 wheel、完全离线）在 UI 长到 6 视图（线路图 / 车票夹 / 仪表 / 气象台 / 站台 / 调度日志）后依然稳定，app.js 约 400 行尚未失控；React+Vite 的收益（组件化、TS 类型）要到「多页面 + 多人协作 + 状态更复杂」才会兑现，而成本（构建链、CI、打包）立刻发生。**结论：暂缓迁移**，保持 vanilla + tokens.css 单一视觉源；触发重评的阈值：app.js 超 ~800 行、或出现需要路由的多页需求、或 2+ 人同时改前端。
 
 ## 9. 风险登记（项目自身）
 
