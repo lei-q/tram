@@ -1,0 +1,46 @@
+# Tram 阶段门配置（确定性检查注册表）。策略决策见 gates.rego / 内置 fallback 引擎。
+# 本文件在 `tram init` 时复制到 .tram/gates.yaml，可按项目改写。
+gates:
+  g0_charter_gate:
+    blocking: true
+    remediation_limit: 3
+    checks:
+      - id: repo_is_git
+        type: command
+        cmd: ["git", "rev-parse", "--is-inside-work-tree"]
+      - id: charter_present
+        type: evidence
+        require: artifact_present
+        artifact: charter
+
+  g1_planning_gate:
+    blocking: true
+    remediation_limit: 3
+    checks:
+      - id: artifacts_verified
+        type: evidence
+        require: every_artifact_has_verified_evidence
+
+  g2_quality_gate:
+    blocking: true
+    remediation_limit: 3
+    checks:
+      - id: tests_pass
+        type: command
+        cmd: ["python3", "-m", "pytest", "-q"]
+      - id: evidence_ok
+        type: evidence
+        require: every_artifact_has_verified_evidence
+      # 覆盖率示例（项目按需启用）：
+      # - id: coverage
+      #   type: coverage
+      #   cmd: ["python3", "-m", "pytest", "-q", "--cov=.", "--cov-report=term"]
+      #   min_percent: 80
+
+  g3_closing_gate:
+    blocking: true
+    remediation_limit: 3
+    checks:
+      - id: evidence_ok
+        type: evidence
+        require: every_artifact_has_verified_evidence
