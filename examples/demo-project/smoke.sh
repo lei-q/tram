@@ -32,9 +32,6 @@ echo "==> generate all artifacts, pass G1 (planning -> executing)"
 tram artifact generate --all
 tram gate run g1_planning_gate
 
-echo "==> tram run: drive the line gate by gate (green advances, red stops)"
-tram run
-
 echo "==> agent task with an out-of-scope write (expect INTENT BLOCKED + CR)"
 tram agent run --runner fake \
   --prompt "add mul" \
@@ -77,6 +74,13 @@ tram qa fail T-002 --note "复发：修复未生效" --by "$USER"
 echo "==> KPI dashboard (gate/defect MTTR + rework/escape rates)"
 tram kpi
 tram kpi | grep -q "escape rate" && echo "   (escape rate counted ✅)"
+
+echo "==> mainline sprint: tram run drives gate by gate (stops at g3 for the human)"
+tram run
+
+echo "==> human approves the release (HITL), then the line completes"
+tram approve release --by "$USER"
+tram run
 
 echo "==> regenerate the risk register (now carries the EVM risks)"
 tram artifact generate risk_register

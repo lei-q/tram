@@ -177,7 +177,11 @@ function renderPlatform(state) {
   }
   for (const [gateId, status] of Object.entries(state.gate_status)) {
     if (status === "blocked_pending_human") {
-      items.push(["🚦", `门禁 ${gateId} 三次整改仍红，已升级待人审`, "tram gate run " + gateId + "  # 整改后重跑"]);
+      if (gateId === "g3_closing_gate") {
+        items.push(["🚦", "门禁 g3 待 release 人工放行", "tram approve release --by <你>"]);
+      } else {
+        items.push(["🚦", `门禁 ${gateId} 三次整改仍红，已升级待人审`, "tram gate run " + gateId + "  # 整改后重跑"]);
+      }
     }
   }
   for (const cr of state.open_crs) {

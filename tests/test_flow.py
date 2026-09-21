@@ -149,8 +149,9 @@ def _init_and_approve(git_repo, monkeypatch) -> None:
     assert runner_cli.invoke(app, ["baseline", "approve", "--by", "lay"]).exit_code == 0
 
 
-def test_cli_run_drives_to_human_release_gate(git_repo, monkeypatch):
-    """Auto-advance through g0-g2; g3 must stop for the human release approval (HITL)."""
+def test_cli_run_full_line_with_release_hitl(git_repo, monkeypatch):
+    """Auto-advance through g0-g2; g3 stops for the human release approval (HITL),
+    and after `tram approve release` the line completes to the terminus."""
     _init_and_approve(git_repo, monkeypatch)
     assert runner_cli.invoke(app, ["artifact", "generate", "--all"]).exit_code == 0
     _write_gates(git_repo, {g: "true" for g in _ALL_GATES})
@@ -163,6 +164,16 @@ def test_cli_run_drives_to_human_release_gate(git_repo, monkeypatch):
 
     state = json.loads((git_repo / ".tram" / "state.json").read_text(encoding="utf-8"))
     assert state["phase"] == "closing"
+
+    # the human grants the release, and the line completes
+    result = runner_cli.invoke(app, ["approve", "release", "--by", "lay"])
+    assert result.exit_code == 0, result.output
+    result = runner_cli.invoke(app, ["run"], env={"COLUMNS": "220"})
+    assert result.exit_code == 0, result.output
+    assert "终点站" in result.output
+
+    state = json.loads((git_repo / ".tram" / "state.json").read_text(encoding="utf-8"))
+    assert state["phase"] == "done"
 
 
 def test_cli_run_stops_at_red_light(git_repo, monkeypatch):

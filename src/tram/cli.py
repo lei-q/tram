@@ -39,6 +39,7 @@ from tram.sandbox.worktree import WorktreeSession
 
 app = typer.Typer(help="Tram 🚋 - governance rails for AI coding agents.", no_args_is_help=True)
 baseline_app = typer.Typer(help="scope baseline (HITL)", no_args_is_help=True)
+approve_app = typer.Typer(help="human approvals (HITL)", no_args_is_help=True)
 gate_app = typer.Typer(help="run phase gates", no_args_is_help=True)
 guard_app = typer.Typer(help="intent guard: changes vs scope baseline", no_args_is_help=True)
 agent_app = typer.Typer(help="run coding-agent tasks inside the sandbox", no_args_is_help=True)
@@ -48,6 +49,7 @@ task_app = typer.Typer(help="task records (EVM data source)", no_args_is_help=Tr
 evm_app = typer.Typer(help="earned value management (SPI/CPI)", no_args_is_help=True)
 qa_app = typer.Typer(help="QA loop: reproduce -> rework -> verify", no_args_is_help=True)
 app.add_typer(baseline_app, name="baseline")
+app.add_typer(approve_app, name="approve")
 app.add_typer(gate_app, name="gate")
 app.add_typer(guard_app, name="guard")
 app.add_typer(agent_app, name="agent")
@@ -200,6 +202,37 @@ def baseline_approve(
         _fail(exc)
         return
     console.print("[green]scope baseline approved ✅[/green]")
+
+
+@approve_app.command("release")
+def approve_release(
+    by: Annotated[str, typer.Option(help="approver identity")] = "human",
+    note: Annotated[str, typer.Option(help="approval note")] = "",
+) -> None:
+    """HITL: approve the release (unblocks g3_closing_gate -> 终点站)."""
+    try:
+        ctx = load_context()
+        state = ctx.load_state()
+        state.human_approvals.append(
+            Approval(
+                decision="approved",
+                by=by,
+                at=_utcnow(),
+                kind="release",
+                artifact_ref="release",
+                note=note,
+            )
+        )
+        ctx.state_store.save(state)
+        ctx.events.append(
+            EventKind.HUMAN_DECISION,
+            source="tram.approve",
+            data={"decision": "approved", "kind": "release", "by": by, "note": note},
+        )
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print("[green]release approved ✅ — `tram run` 可以开到终点站了[/green]")
 
 
 @gate_app.command("run")
