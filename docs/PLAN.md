@@ -93,9 +93,9 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第三批：UI 完整版第一增量）**：风险气象台（未关闭风险按 P×I 定天气：多云/阵雨/雷雨，trigger 事件 seq 可查）；行车 KPI 卡（门禁 MTTR / 缺陷 MTTR / 返工率 / 逃逸率，悬停看分主体明细）；站台审批页（只读列出所有待人工动作：基线待批、门禁升级待人审、CR 绕行待审、EVM 越界，各附对应 CLI 命令——UI 无任何绕过门禁的按钮，审批一律回 CLI 写事件流）。
 
-**已完成（第四批：治理主线状态机，T1.10）**：`tram run`——沿主线连续过门禁：绿灯推进相位、红灯/升级即停（整改轮次由 GateRunner 计数，HITL 停车如实呈现，如 g3 的 release 人工放行）。编排层 `tram orchestration/graph.py`：节点只依赖 GateRunner 与纯函数（确定性优先，LLM 不在决策路径），装了 langgraph（`pip install 'tram[orchestration]'`）用 StateGraph 编排，没装由内置解释器行走同一套节点/路由函数，行为逐分支一致（有等价性测试）。
+**已完成（第四批：治理主线状态机，T1.10）**：`tram run`——沿主线连续过门禁：绿灯推进相位、红灯/升级即停（整改轮次由 GateRunner 计数，HITL 停车如实呈现，如 g3 的 release 人工放行）。`tram approve release`（HITL：放行后 `tram run` 即达终点站）。编排层 `tram orchestration/graph.py`：节点只依赖 GateRunner 与纯函数（确定性优先，LLM 不在决策路径），装了 langgraph（`pip install 'tram[orchestration]'`）用 StateGraph 编排，没装由内置解释器行走同一套节点/路由函数，行为逐分支一致（有等价性测试）。
 
-**待做**：UI 完整版剩余（React 版评估、审批动作直连事件流的形态，含 release 审批 CLI）；docker 沙箱。
+**待做**：UI 完整版剩余（React 版评估、审批动作直连事件流的形态）；docker 沙箱。
 
 ## 9. 风险登记（项目自身）
 
