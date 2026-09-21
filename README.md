@@ -46,7 +46,7 @@ tram replay --limit 20         # 回放事件黑匣子
 tram ui                        # 只读线路图 UI（需 pip install 'tram[ui]'）
 ```
 
-接真实引擎：`tram agent run --runner claude --prompt "实现 X"`（需 `claude` CLI；默认在 git worktree 沙箱内执行）。
+接真实引擎：`tram agent run --runner claude --prompt "实现 X"`（需 `claude` CLI；默认在 git worktree 沙箱内执行）。共享环境可加 `--sandbox docker`：agent 命令进容器执行（镜像可配 `tram.yaml` 的 `docker_image`，需镜像内装好引擎 CLI），Intent Guard / 提交 / 事件流仍留在宿主机——容器管执行隔离，git 管变更隔离。
 
 ### 角色提示词（PM / QA / Dev）
 

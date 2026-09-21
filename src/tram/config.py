@@ -49,6 +49,7 @@ class TramConfig(BaseModel):
     project_name: str
     sandbox: SandboxMode = SandboxMode.WORKTREE
     policy_engine: PolicyEngineKind = PolicyEngineKind.AUTO
+    docker_image: str = "node:22-bookworm-slim"  # 沙箱镜像：引擎 CLI 需已装在镜像内
     evm_thresholds: EvmThresholds = Field(default_factory=EvmThresholds)
     knowledge_areas: dict[str, AreaLevel] = Field(
         default_factory=lambda: dict(DEFAULT_KNOWLEDGE_AREAS)

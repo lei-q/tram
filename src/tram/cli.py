@@ -35,6 +35,7 @@ from tram.models.events import EventKind
 from tram.models.gates import GateStatus
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
 from tram.orchestration import invoke_flow
+from tram.sandbox.docker import DockerSandboxRunner
 from tram.sandbox.worktree import WorktreeSession
 
 app = typer.Typer(help="Tram 🚋 - governance rails for AI coding agents.", no_args_is_help=True)
@@ -348,12 +349,18 @@ def agent_run(
         float | None, typer.Option(help="story-point estimate for this task (EVM)")
     ] = None,
     role: Annotated[str, typer.Option(help="role prompt template: pm | qa | dev")] = "dev",
+    sandbox: Annotated[
+        str | None,
+        typer.Option(
+            help="worktree (default) | docker: agent in a container, governance host-side"
+        ),
+    ] = None,
     task_ref: Annotated[
         str | None,
         typer.Option("--task", help="attach to an existing task (e.g. a QA rework task)"),
     ] = None,
 ) -> None:
-    """Run one agent task in a worktree sandbox, guarded by Intent Guard."""
+    """Run one agent task in a sandbox, guarded by Intent Guard."""
     try:
         ctx = load_context()
         state = ctx.load_state()
@@ -369,6 +376,15 @@ def agent_run(
         engine = ClaudeCodeRunner()
     else:
         _fail(ValueError(f"unknown runner '{runner}' (fake | claude)"))
+        return
+    sandbox_mode = sandbox or ctx.config.sandbox.value
+    if sandbox_mode == "docker":
+        if runner != "claude":
+            _fail(ValueError("--sandbox docker needs --runner claude (fake runs host-side)"))
+            return
+        engine = DockerSandboxRunner(engine, image=ctx.config.docker_image)
+    elif sandbox_mode != "worktree":
+        _fail(ValueError(f"unknown sandbox '{sandbox_mode}' (worktree | docker)"))
         return
     if role not in ROLE_KINDS:
         _fail(ValueError(f"unknown role '{role}' ({' | '.join(ROLE_KINDS)})"))

@@ -16,7 +16,8 @@ class ClaudeCodeRunner:
     def __init__(self, binary: str = "claude") -> None:
         self.binary = binary
 
-    def run(self, task: TaskSpec, workspace: Path) -> RunResult:
+    def build_cmd(self, task: TaskSpec) -> list[str]:
+        """The engine argv, workspace-relative. Docker 沙箱靠它翻译成容器命令。"""
         cmd = [
             self.binary,
             "-p",
@@ -29,19 +30,10 @@ class ClaudeCodeRunner:
             cmd += ["--allowedTools", ",".join(task.allowed_tools)]
         if task.max_turns:
             cmd += ["--max-turns", str(task.max_turns)]
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=workspace,
-                capture_output=True,
-                text=True,
-                timeout=task.timeout_s,
-            )
-        except FileNotFoundError as exc:
-            raise RunnerUnavailableError(
-                f"'{self.binary}' CLI not found; install Claude Code or use --runner fake"
-            ) from exc
+        return cmd
 
+    def parse(self, proc: subprocess.CompletedProcess) -> RunResult:
+        """stream-json -> RunResult（工具轨迹进黑匣子）。"""
         trace: list[dict] = []
         final: dict = {}
         for line in proc.stdout.splitlines():
@@ -69,9 +61,27 @@ class ClaudeCodeRunner:
         status = "ok" if final.get("subtype") == "success" else "error"
         summary = str(final.get("result") or final.get("subtype") or f"exit={proc.returncode}")
         return RunResult(
-            task_id=task.id,
+            task_id="",  # filled by run()
             runner=self.name,
             status=status,
             summary=summary[:2000],
             tool_trace=trace,
         )
+
+    def run(self, task: TaskSpec, workspace: Path) -> RunResult:
+        argv = self.build_cmd(task)
+        try:
+            proc = subprocess.run(
+                argv,
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=task.timeout_s,
+            )
+        except FileNotFoundError as exc:
+            raise RunnerUnavailableError(
+                f"'{self.binary}' CLI not found; install Claude Code or use --runner fake"
+            ) from exc
+        result = self.parse(proc)
+        result.task_id = task.id
+        return result

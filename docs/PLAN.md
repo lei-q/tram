@@ -49,7 +49,7 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
                 ├─ governance/  checks(确定性) + policy_engine(OPA|fallback) + intent_guard + gate_runner
                 ├─ orchestration/  阶段推进纯函数（LangGraph 包装待接）
                 ├─ adapters/   AgentRunner 协议：fake ✅ / claude-code ✅（/openhands 预留）
-                ├─ sandbox/    WorktreeSession ✅（docker 预留）
+                ├─ sandbox/    WorktreeSession ✅ / DockerSandboxRunner ✅
                 ├─ evidence/   git_client + verifier
                 ├─ obs/        EventLog(JSONL) + otel(可选)
                 └─ models/     Pydantic：state/gates/cr/risk/evm/task/artifact/event
@@ -69,7 +69,7 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 | T1.6 | 确定性检查注册表（command/coverage/evidence） | ✅ |
 | T1.7 | OPA + fallback 双引擎 + `tram gate run` | ✅（本机无 OPA 自动降级；CI 装 OPA 跑一致性测试） |
 | T1.8 | 范围基线 + Intent Guard（含 dotfile 回归修复） | ✅ |
-| T1.9 | worktree 沙箱（默认）+ Claude Code 适配器 + fake runner | ✅（docker 模式预留配置，未实现） |
+| T1.9 | worktree 沙箱（默认）+ Claude Code 适配器 + fake runner | ✅（docker 沙箱已落地，见第五批） |
 | T1.10 | 状态机（阶段推进 + 纠偏轮次上限） | ✅ `tram run` 治理主线状态机（LangGraph 包装 + 零依赖解释器，行为一致） |
 | T1.11 | HITL 门（baseline approve / cr approve / cr reject） | ✅ |
 | T1.12 | 工件生成器 + 6 类模板（charter/scope_baseline/wbs/schedule/quality_plan/risk_register） | ✅ 证据 frontmatter + 确定性渲染 + 风险自动派生 |
@@ -95,8 +95,10 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第四批：治理主线状态机，T1.10）**：`tram run`——沿主线连续过门禁：绿灯推进相位、红灯/升级即停（整改轮次由 GateRunner 计数，HITL 停车如实呈现，如 g3 的 release 人工放行）。`tram approve release`（HITL：放行后 `tram run` 即达终点站）。编排层 `tram orchestration/graph.py`：节点只依赖 GateRunner 与纯函数（确定性优先，LLM 不在决策路径），装了 langgraph（`pip install 'tram[orchestration]'`）用 StateGraph 编排，没装由内置解释器行走同一套节点/路由函数，行为逐分支一致（有等价性测试）。
 
-**待做**：UI 完整版剩余（React 版评估、审批动作直连事件流的形态）；docker 沙箱。
+**已完成（第五批：docker 沙箱）**：`tram agent run --sandbox docker`——agent 命令经 `docker run` 进容器执行（worktree bind-mount，`--pull never` 不偷偷拉镜像，`docker_image` 可配），Intent Guard / Tram 提交 / 事件流留在宿主机：容器管执行隔离、git 管变更隔离（R3 落地）。适配器拆出 `build_cmd`/`parse`，任何满足该形状的 runner 都能被沙箱包装。
+
+**待做**：UI 完整版剩余（React 版评估、审批动作直连事件流的形态）。
 
 ## 9. 风险登记（项目自身）
 
-R1 治理过重拖慢 Agent → 阈值可配、检查可缓存；R2 LLM 结构化不可靠 → schema 校验 + 确定性回查；R3 worktree 隔离弱于容器 → 本机场景可接受，共享环境建议 docker；R4 OPA 安装摩擦 → fallback 引擎同语义；R5 工时噪声 → 用任务点数；R6 纠偏死循环 → 3 次上限 + 人类升级。
+R1 治理过重拖慢 Agent → 阈值可配、检查可缓存；R2 LLM 结构化不可靠 → schema 校验 + 确定性回查；R3 worktree 隔离弱于容器 → ✅ docker 沙箱已落地（`--sandbox docker`）；R4 OPA 安装摩擦 → fallback 引擎同语义；R5 工时噪声 → 用任务点数；R6 纠偏死循环 → 3 次上限 + 人类升级。
