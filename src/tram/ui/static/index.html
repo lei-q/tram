@@ -29,58 +29,36 @@
     <div id="kpis" class="kpis"></div>
   </div>
 
-  <!-- 主甲板：上风挡兼调度台（点节点开车），下主驾席会话车厢（全宽全高） -->
+  <!-- 主甲板：左列风挡兼调度台 + 底舱，右列主驾席会话车厢通栏到顶 -->
   <div class="deck">
-    <section class="card pane pane--map">
-      <div class="map-head">
-        <h2>线路图 · 风挡兼调度台（点 G0–G3 信号灯过门 · 点电车全线运行）</h2>
-        <p id="console-help" class="console-help" hidden>
-          当前只读 —— <code>tram ui --approve</code> 解锁调度台与站台审批
-        </p>
-        <div class="dispatch-strip">
-          <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
-          <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
-          <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
-          <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
-          <button class="dispatch-btn" id="baseline-open">📝 基线</button>
+    <div class="deck-left">
+      <section class="card pane pane--map">
+        <div class="map-head">
+          <h2>线路图 · 风挡兼调度台（点 G0–G3 信号灯过门 · 点电车全线运行）</h2>
+          <p id="console-help" class="console-help" hidden>
+            当前只读 —— <code>tram ui --approve</code> 解锁调度台与站台审批
+          </p>
+          <div class="dispatch-strip">
+            <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
+            <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
+            <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
+            <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
+            <button class="dispatch-btn" id="baseline-open">📝 基线</button>
+          </div>
         </div>
-      </div>
-      <svg id="route-map" viewBox="0 30 920 336" role="img" aria-label="项目治理线路图（可点击调度）"></svg>
-    </section>
+        <svg id="route-map" viewBox="0 30 920 336" role="img" aria-label="项目治理线路图（可点击调度）"></svg>
+      </section>
 
-    <section class="card pane pane--chat">
-      <h2>会话车厢 · 主驾席（直接与引擎对话 · Guard 铁轨 · 轨内自动提交）</h2>
-      <div class="chat-bar">
-        <select id="chat-engine" class="chat-select">
-          <option value="claude">claude code</option>
-          <option value="openhands">openhands</option>
-          <option value="fake">fake（离线测试）</option>
-        </select>
-        <select id="chat-sessions" class="chat-select"></select>
-        <button class="dispatch-btn" id="chat-new">➕ 新会话</button>
-        <button class="dispatch-btn dispatch-btn--ghost" id="chat-close">🏁 收车</button>
-        <button class="dispatch-btn dispatch-btn--ghost" id="chat-clear-log" title="清空本会话的聊天历史（服务器端一并清除）">🧹 清空</button>
-      </div>
-      <div id="chat-log" class="chat-log">
-        <div class="chat-hint">开新会话后发第一条消息：立任务 + 建常驻 worktree，之后每条消息跑完即过 Guard</div>
-      </div>
-      <div class="chat-input-bar">
-        <input id="chat-input" placeholder="对引擎说什么……（Enter 发送）" />
-        <button class="dispatch-btn dispatch-btn--main" id="chat-send">发送</button>
-      </div>
-    </section>
-  </div>
-
-  <!-- 底舱：次要面板 tab 化，一屏内切换不滚屏 -->
-  <nav class="dock-tabs" role="tablist" aria-label="底舱面板">
+      <!-- 底舱：次要面板 tab 化，一屏内切换不滚屏 -->
+      <nav class="dock-tabs" role="tablist" aria-label="底舱面板">
     <button class="dock-tab is-active" data-pane="dock-files" role="tab">📁 文件车厢</button>
     <button class="dock-tab" data-pane="dock-tasks" role="tab">📋 任务板</button>
     <button class="dock-tab" data-pane="dock-platform" role="tab">🚏 站台审批<span id="platform-badge" class="tab-badge" hidden></span></button>
     <button class="dock-tab" data-pane="dock-arts" role="tab">🎫 车票 · 绕行</button>
     <button class="dock-tab" data-pane="dock-weather" role="tab">🌤 风险气象</button>
     <button class="dock-tab" data-pane="dock-events" role="tab">📜 行车记录</button>
-  </nav>
-  <div class="dock">
+      </nav>
+      <div class="dock">
     <section class="card dock-pane is-active" id="dock-files" role="tabpanel">
       <div class="files-toolbar">
         <h2>文件车厢 · 项目文件（● = 未提交改动 · 保存先过 Intent Guard，越界自动立案）</h2>
@@ -133,6 +111,30 @@
       <div id="console" class="console console--dock" aria-live="polite"></div>
       <h2 class="dock-sub">事件流</h2>
       <ul id="events" class="events"></ul>
+    </section>
+      </div>
+    </div>
+
+    <section class="card pane pane--chat">
+      <h2>会话车厢 · 主驾席（直接与引擎对话 · Guard 铁轨 · 轨内自动提交）</h2>
+      <div class="chat-bar">
+        <select id="chat-engine" class="chat-select">
+          <option value="claude">claude code</option>
+          <option value="openhands">openhands</option>
+          <option value="fake">fake（离线测试）</option>
+        </select>
+        <select id="chat-sessions" class="chat-select"></select>
+        <button class="dispatch-btn" id="chat-new">➕ 新会话</button>
+        <button class="dispatch-btn dispatch-btn--ghost" id="chat-close">🏁 收车</button>
+        <button class="dispatch-btn dispatch-btn--ghost" id="chat-clear-log" title="清空本会话的聊天历史（服务器端一并清除）">🧹 清空</button>
+      </div>
+      <div id="chat-log" class="chat-log">
+        <div class="chat-hint">开新会话后发第一条消息：立任务 + 建常驻 worktree，之后每条消息跑完即过 Guard</div>
+      </div>
+      <div class="chat-input-bar">
+        <input id="chat-input" placeholder="对引擎说什么……（Enter 发送）" />
+        <button class="dispatch-btn dispatch-btn--main" id="chat-send">发送</button>
+      </div>
     </section>
   </div>
 

@@ -27,7 +27,7 @@ h2 {
 .shell {
   height: 100dvh;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto clamp(140px, 18vh, 200px);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 8px;
   padding: 10px 12px 12px;
 }
@@ -66,15 +66,22 @@ h2 {
   flex: none;
 }
 
-/* 主甲板：上风挡兼调度台（全宽），下主驾席会话车厢（全宽全高，剩余空间都给它） */
+/* 主甲板：左列（风挡 + 底舱），右列主驾席会话车厢通栏到顶 */
 .deck {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(160px, 28vh) minmax(220px, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(380px, 34vw, 540px);
   gap: 8px;
   min-height: 0;
   min-width: 0;
 }
+.deck-left {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto clamp(150px, 30%, 260px);
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+.pane--chat { min-height: 0; }
 .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane--map #route-map { flex: 1; min-height: 0; width: 100%; }
 
@@ -747,10 +754,11 @@ h2 {
   body { overflow: auto; }
   .shell { height: auto; grid-template-rows: none; }
   .strip { overflow-x: visible; flex-wrap: wrap; }
-  .deck { grid-template-columns: 1fr; grid-template-rows: none; }
+  .deck { grid-template-columns: 1fr; }
+  .deck-left { grid-template-rows: auto auto 380px; }
   .pane--map #route-map { min-height: 200px; }
+  .pane--chat { min-height: 380px; }
   .dock-tabs { overflow-x: visible; flex-wrap: wrap; }
-  .dock { height: 380px; }
   .dock-pane { height: 100%; }
   .files { grid-template-columns: 1fr; height: auto; }
   .file-list, #file-text { min-height: 180px; }
