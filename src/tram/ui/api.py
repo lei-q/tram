@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from tram import operations
 from tram.artifacts.generator import ARTIFACT_KINDS
-from tram.chat import ChatService
+from tram.chat import ChatService, MergeRefused
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance import approvals
@@ -54,6 +54,7 @@ REFRESH_KINDS = {
     "qa_failed",
     "qa_passed",
     "baseline_saved",
+    "session_merged",
 }
 
 
@@ -422,6 +423,20 @@ def create_app(
         except ValueError as exc:
             status = 404 if "unknown" in str(exc) else 400
             raise HTTPException(status, str(exc)) from exc
+
+    @app.post("/api/chat/sessions/{sid}/merge")
+    def api_chat_merge(sid: str, req: ChatOpenRequest, request: Request) -> dict:
+        """并线：会话分支经 Guard 预检合回主线（沙箱产出 → 项目文件）。"""
+        _require_write(request)
+        if not req.by.strip():
+            raise HTTPException(422, "并线要署名：by 不能为空")
+        try:
+            return chat.merge_session(sid, req.by)
+        except ValueError as exc:
+            status = 404 if "unknown" in str(exc) else 400
+            raise HTTPException(status, str(exc)) from exc
+        except MergeRefused as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/chat/sessions/{sid}/log")
     def api_chat_log(sid: str) -> dict:

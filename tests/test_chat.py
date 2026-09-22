@@ -269,6 +269,90 @@ def test_chat_log_api_roundtrip(git_repo):
     assert client.get(f"/api/chat/sessions/{sid}/log").json()["lines"] == []
 
 
+def test_merge_session_brings_changes_to_mainline(git_repo):
+    """并线正门：轨内产出经 Guard 预检合回主线，事件与 commit_refs 留痕。"""
+    svc, ctx = _service(git_repo, {"src/hello.py": "x = 1\n"})
+    session, job = svc.send_message(None, "写点东西", by="lay")
+    assert job.commit
+
+    main_before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=git_repo, capture_output=True, text=True
+    ).stdout.strip()
+    result = svc.merge_session(session["id"], by="lay")
+    assert result["merged"] is True and result["paths"] == ["src/hello.py"]
+
+    main_after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=git_repo, capture_output=True, text=True
+    ).stdout.strip()
+    assert main_after != main_before
+    assert (git_repo / "src" / "hello.py").read_text(encoding="utf-8") == "x = 1\n"  # 进主树
+    kinds = [e.kind for e in ctx.events.read() if e.source == "tram.chat.merge"]
+    assert EventKind.SESSION_MERGED in kinds
+    record = ctx.load_state().task(session["task_id"])
+    assert result["commit"] in record.commit_refs  # 并线提交也挂在任务账上
+
+    # 没有新产出时再并线是 no-op
+    again = svc.merge_session(session["id"], by="lay")
+    assert again["merged"] is False and again["reason"] == "nothing"
+
+
+def test_merge_refused_when_mainline_dirty(git_repo):
+    svc, _ctx = _service(git_repo, {"src/hello.py": "x = 1\n"})
+    session, _job = svc.send_message(None, "写点东西", by="lay")
+    (git_repo / "README.md").write_text("人手头的未提交改动\n", encoding="utf-8")
+    from tram.chat import MergeRefused
+
+    with pytest.raises(MergeRefused, match="未提交改动"):
+        svc.merge_session(session["id"], by="lay")
+
+
+def test_merge_blocked_paths_draft_cr(git_repo):
+    """基线在会话之后收窄：分支带着越界路径，并线拦截并立案（扩基线后重试即过）。"""
+    svc, ctx = _service(git_repo, {"src/hello.py": "x = 1\n"})
+    session, _job = svc.send_message(None, "写点东西", by="lay")
+
+    baseline = ctx.load_baseline()
+    baseline.allowed_paths = []  # 基线收窄：会话期间被人改过
+    baseline.dump(ctx.baseline_file)
+
+    result = svc.merge_session(session["id"], by="lay")
+    assert result["merged"] is False and result["reason"] == "blocked"
+    cr = CRStore(ctx.crs_dir).load(result["cr"])
+    assert cr.type.value == "scope"
+    assert not (git_repo / "src" / "hello.py").exists()  # 主线未动
+
+    baseline.allowed_paths = ["src/**"]
+    baseline.dump(ctx.baseline_file)
+    assert svc.merge_session(session["id"], by="lay")["merged"] is True  # 扩基线后重试即过
+
+
+def test_merge_api_roundtrip_and_gates(git_repo):
+    app = create_app(git_repo, allow_approvals=True, inline_jobs=True)
+    token = TestClient(app).get("/api/ui-config").json()["token"]
+    client = TestClient(app)
+    # 直驱造一个有产出的会话（会话注册表在磁盘上，API 侧同仓可见）
+    svc = ChatService(load_context(git_repo), inline=True)
+    svc._engine = lambda name: FakeRunner({"src/via_api.py": "y = 2\n"})  # noqa: SLF001
+    session, job = svc.send_message(None, "给 API 并线用", by="lay")
+    assert job.commit
+    sid = session["id"]
+
+    assert (
+        client.post(f"/api/chat/sessions/{sid}/merge", json={"by": " "}).status_code == 403
+    )  # 无令牌
+    assert (
+        client.post(
+            f"/api/chat/sessions/{sid}/merge", json={"by": " "}, headers={"X-Tram-Token": token}
+        ).status_code
+        == 422
+    )  # 要署名
+    merged = client.post(
+        f"/api/chat/sessions/{sid}/merge", json={"by": "lay"}, headers={"X-Tram-Token": token}
+    ).json()
+    assert merged["merged"] is True and "src/via_api.py" in merged["paths"]
+    assert client.post("/api/chat/sessions/chat-9999/merge", json={"by": "lay"}).status_code == 403
+
+
 def test_close_dirty_session_keeps_worktree(git_repo):
     svc, _ctx = _service(git_repo, {"vendor/pyproject.toml": "a=1\n"})
     session, _job = svc.send_message(None, "越界", by="lay")

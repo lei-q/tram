@@ -125,6 +125,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第十七批：线路图融合调度台）**：五连修。(1) 署名前置拦截：callAction 统一先查司机署名，空署名不再放行到后端 422——顶栏司机框脉冲提醒 + 聚焦 + toast。(2)(3)(5) 布局重构：**调度能力长在线路图上**——点 G0–G3 信号灯即 gate.run、点 Trammy 即全线运行（flow.run），风挡头只剩一条紧凑按钮带（Guard/开票/EVM/基线）；右轨整体撤销，主甲板改单列全宽——风挡（33vh）+ 会话车厢（剩余全部），会话日志区显著变大；站台审批与行车记录仪移入底舱 tab（审批 tab 带待办角标），行车记录与事件流合并成「行车记录」面板；底舱收窄（20vh）让出主甲板；子过程轨道放宽（行距 17、字号上调、图例间距加大）。(4) 聊天历史持久化：`.tram/chat/<sid>/log.jsonl` 逐行落盘（me/引擎行/错误），刷新页面自动还原（选会话/启动时拉 `/api/chat/sessions/{sid}/log`），**默认永远保留**，唯一清除途径是「🧹 清空」按钮（DELETE 同端点，三道闸 + 署名 + confirm）。修掉一个隐藏 bug：ui_line 返回单 dict 时 `_tap` 直接迭代会把 key 当行。
 
+**已完成（第十九批：会话并线）**：补上「沙箱产出 → 主线」的最后一公里。`ChatService.merge_session`：分支变更集（merge-base..branch）先过 Intent Guard——越界照章立案 CR（source=tram.chat.merge，站台审批放行/扩基线后重试即过）；主工作区**已跟踪**文件有未提交改动则拒绝（未跟踪不算：.tram/ 账本、init 写的 .gitignore 是治理层自己的落盘，碰撞由 git 兜底）；`git merge --no-ff` 入主线（TRAM_IDENTITY 落款），冲突即 `--abort` 并报「请手动解决」；成功记 `SESSION_MERGED` 事件 + 合并提交挂任务 commit_refs，进 REFRESH_KINDS 全舱刷新。API `POST /api/chat/sessions/{sid}/merge`（三道闸 + 署名；ValueError→404/400、MergeRefused→409）；UI 会话栏「🔀 并线」按钮（confirm → 结果三种呈现：并线成功/越界立案/无产出）。
+
 **后续批次（UI 全功能化路线）**：
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 

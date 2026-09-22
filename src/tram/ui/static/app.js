@@ -965,6 +965,51 @@ document.getElementById("chat-sessions").addEventListener("change", (ev) => {
   loadChatLog(chatSessionId);
 });
 
+/* 并线：会话分支经 Guard 预检合回主线——沙箱产出进项目文件的正门 */
+document.getElementById("chat-merge").addEventListener("click", async () => {
+  const sid = document.getElementById("chat-sessions").value;
+  if (!sid) {
+    toast("先选一条会话", true);
+    return;
+  }
+  if (!uiConfig.approvals_enabled) {
+    toast("只读模式 —— `tram ui --approve` 解锁并线", true);
+    return;
+  }
+  const by = driverName();
+  if (!by) {
+    toast("并线要署名 ✍️（顶栏司机署名）", true);
+    return;
+  }
+  if (!window.confirm(`把 ${sid} 的分支并回主线？\n会先过 Intent Guard，轨内才合；冲突会自动中止。`)) return;
+  try {
+    const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sid)}/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({ by }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      appendChatNote(`并线被拒：${body.detail || res.status}`, "error");
+      toast(body.detail || "并线被拒", true);
+      return;
+    }
+    if (body.merged) {
+      appendChatNote(`🔀 已并线（${(body.commit || "").slice(0, 8)} · ${body.paths.length} 个路径进主线）`, "result");
+      toast("会话分支已并回主线 ✅");
+      refresh();
+    } else if (body.reason === "blocked") {
+      appendChatNote(`越界路径被拦 → CR ${body.cr} 立案，站台审批放行或扩基线后重试`, "error");
+      toast(`并线立案：CR ${body.cr}`, true);
+      refresh();
+    } else {
+      appendChatNote(body.detail, "result");
+    }
+  } catch (err) {
+    toast("并线异常：" + err, true);
+  }
+});
+
 document.getElementById("chat-clear-log").addEventListener("click", async () => {
   const sid = document.getElementById("chat-sessions").value;
   if (!sid) {

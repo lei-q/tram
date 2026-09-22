@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import subprocess
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -26,11 +27,15 @@ from tram.cr_store import CRStore
 from tram.governance.intent_guard import IntentGuard, classify_violations
 from tram.models.events import EventKind
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
-from tram.sandbox.worktree import WorktreeSession
+from tram.sandbox.worktree import TRAM_IDENTITY, WorktreeSession
 
 COMMIT_TRAILER = "Co-Authored-By: Claude Code <noreply@anthropic.com>"
 ENGINES = ("claude", "openhands", "fake")
 MAX_JOB_LINES = 400
+
+
+class MergeRefused(RuntimeError):
+    """并线被拒（主工作区脏 / 冲突）——修好环境再来，不是治理结论。"""
 
 
 def _now() -> str:
@@ -204,6 +209,127 @@ class ChatService:
                 record.spent_points = record.est_points
                 self.ctx.state_store.save(state)
         return self.get_session(session_id)  # type: ignore[return-value]
+
+    def merge_session(self, session_id: str, by: str) -> dict:
+        """并线：会话分支经 Guard 预检后合回主线——沙箱产出进项目文件的唯一正门.
+
+        并线本身是治理动作：分支带来的变更集先过 Intent Guard（基线可能在
+        会话期间变过），越界照章立案 CR（批准扩基线后重试）；主工作区必须
+        干净（不和人手头的工作混）；冲突即中止——确定性工具不裁语义冲突。
+        """
+        session = self.get_session(session_id)
+        if session is None:
+            raise ValueError(f"unknown session: {session_id}")
+        if not session.get("branch"):
+            raise ValueError(f"session {session_id} 还没有产出（先发条消息）")
+
+        # 已跟踪文件的改动 = 人的工作（未跟踪文件不算：.tram/ 账本、init 写的
+        # .gitignore 都是治理层自己的落盘，git 也会在碰撞时拒绝覆盖）
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "-uall"],
+            cwd=self.ctx.repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        dirty = [ln[3:] for ln in status.splitlines() if ln and not ln.startswith("??")]
+        if dirty:
+            raise MergeRefused(
+                f"主工作区有 {len(dirty)} 处未提交改动——先 commit/stash 再并线，不混账"
+            )
+
+        changed = self._branch_changes(session["branch"])
+        if not changed:
+            return {
+                "merged": False,
+                "reason": "nothing",
+                "detail": "会话分支没有领先主线的提交，无需并线",
+                "paths": [],
+            }
+
+        decision = IntentGuard(self.ctx.load_baseline()).check(changed)
+        if not decision.ok:
+            state = self.ctx.load_state()
+            event = self.ctx.events.append(
+                EventKind.INTENT_BLOCKED,
+                source="tram.chat.merge",
+                data={"session": session_id, "violations": decision.violations},
+                refs={"task": session.get("task_id") or ""},
+            )
+            cr = CRStore(self.ctx.crs_dir).create_draft(
+                state,
+                classify_violations(decision.violations),
+                changed_paths=decision.violations,
+                reason=f"merge session {session_id}: branch carries out-of-scope paths",
+                trigger_event_seq=event.seq,
+            )
+            self.ctx.state_store.save(state)
+            self.ctx.events.append(
+                EventKind.CR_CREATED,
+                source="tram.chat.merge",
+                data={"cr": cr.id, "session": session_id, "paths": decision.violations},
+                refs={"event": str(event.seq)},
+            )
+            return {
+                "merged": False,
+                "reason": "blocked",
+                "detail": "分支带有越界路径，已立案 CR——站台审批放行或扩基线后重试",
+                "violations": decision.violations,
+                "cr": cr.id,
+                "paths": changed,
+            }
+
+        merge_msg = f"tram: merge session {session_id} ({len(changed)} paths)\n\n{COMMIT_TRAILER}"
+        proc = subprocess.run(
+            ["git", *TRAM_IDENTITY, "merge", "--no-ff", session["branch"], "-m", merge_msg],
+            cwd=self.ctx.repo,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            subprocess.run(["git", "merge", "--abort"], cwd=self.ctx.repo, capture_output=True)
+            raise MergeRefused(
+                "并线有冲突——确定性工具不裁语义冲突，请手动 `git merge "
+                f"{session['branch']}` 解决后重试"
+            )
+
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=self.ctx.repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        state = self.ctx.load_state()
+        record = state.task(session.get("task_id") or "")
+        if record is not None:
+            record.commit_refs.append(sha)
+            self.ctx.state_store.save(state)
+        self.ctx.events.append(
+            EventKind.SESSION_MERGED,
+            source="tram.chat.merge",
+            data={"session": session_id, "commit": sha, "paths": changed, "by": by},
+            refs={"commit": sha, "task": session.get("task_id") or ""},
+        )
+        return {"merged": True, "commit": sha, "paths": changed}
+
+    def _branch_changes(self, branch: str) -> list[str]:
+        """分支领先主线的变更路径（merge-base..branch）。"""
+        base = subprocess.run(
+            ["git", "merge-base", "HEAD", branch],
+            cwd=self.ctx.repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", base, branch],
+            cwd=self.ctx.repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return [p for p in proc.stdout.splitlines() if p.strip()]
 
     # ---------- 引擎与 worktree ----------
 
