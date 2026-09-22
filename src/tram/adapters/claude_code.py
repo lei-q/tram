@@ -46,6 +46,11 @@ class ClaudeCodeRunner:
             cmd += ["--session-id", task.session_id]
         if task.allowed_tools:
             cmd += ["--allowedTools", ",".join(task.allowed_tools)]
+        else:
+            # 沙箱即边界：headless 没人可问，claude 默认把写工具全拒（引擎只能干瞪眼）。
+            # worktree 本身就是隔离层，放开工具权限；轨内轨外由 Tram 的 Intent Guard
+            # 在跑完后判定——引擎的权限系统管交互机器，Tram 管治理。
+            cmd += ["--dangerously-skip-permissions"]
         if task.max_turns:
             cmd += ["--max-turns", str(task.max_turns)]
         return cmd

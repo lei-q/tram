@@ -54,6 +54,16 @@ def test_claude_unavailable_lists_searched_paths(tmp_path):
         )
 
 
+def test_claude_build_cmd_sandbox_grants_tools():
+    """沙箱即边界：默认放开工具权限（headless 没人应答写许可，claude 会全拒）。"""
+    cmd = ClaudeCodeRunner().build_cmd(TaskSpec(id="T-1", prompt="p"))
+    assert "--dangerously-skip-permissions" in cmd
+
+    cmd = ClaudeCodeRunner().build_cmd(TaskSpec(id="T-1", prompt="p", allowed_tools=["Read"]))
+    assert "--dangerously-skip-permissions" not in cmd  # 显式白名单时尊重限制
+    assert "--allowedTools" in cmd and cmd[cmd.index("--allowedTools") + 1] == "Read"
+
+
 def test_claude_build_cmd_session_flags():
     cmd = ClaudeCodeRunner().build_cmd(TaskSpec(id="T-1", prompt="p", session_id="s-1"))
     assert "--session-id" in cmd and cmd[cmd.index("--session-id") + 1] == "s-1"

@@ -371,6 +371,8 @@ tram ui --port 9000 --no-open --host 0.0.0.0
 
 **二进制定位**：Tram 先查 PATH，找不到自动扫常见安装位（`~/.local/bin`、`~/.claude/local`、`/opt/homebrew/bin`、`/usr/local/bin`）——从 IDE 启动的进程 PATH 不全也能找到引擎。
 
+**工具权限模型：沙箱即边界**。引擎在 worktree/docker 沙箱内获得完整工具权限（claude 适配器默认 `--dangerously-skip-permissions`；openhands headless 本就自动放行）——因为隔离已经由沙箱保证，写轨内轨外的判定归 Tram 的 Intent Guard 在跑完后收口，双保险不重叠。若通过 `--allowed-tools` 显式给了白名单，则尊重限制、不再全放。
+
 ### 7.2 沙箱
 
 - **worktree（默认）**：任务/会话跑在 `.tram/worktrees/` 下的 git worktree（`tram/<id>` 分支），主线不动；变更隔离由 git 保证。零提交仓库首次使用会自动补空 bootstrap 提交。
@@ -422,6 +424,7 @@ evm_thresholds:          # EVM 越界阈值（可调；默认如下）
 | `'openhands' CLI not found` | `pip install openhands`（Python 3.12），并先交互式跑一次 `openhands` 配置 LLM |
 | openhands `Headless mode requires existing settings` | 同上——headless 需要先完成一次交互式 LLM 配置 |
 | `git worktree add failed: Not a valid object name: 'HEAD'` | 旧版本问题，已修复（零提交仓库自动补 bootstrap 提交）；升级 tram |
+| 引擎说「写入被权限系统拦下」 | 旧版本问题，已修复（沙箱即边界，默认放开工具权限）；升级 tram；显式 `--allowed-tools` 时是白名单在起作用 |
 | 会话 `blocked` + 出现 CR | 引擎写了轨外路径——预期的治理行为；去站台审批裁决或改基线 |
 | 会话 `error` | 引擎自身失败（非治理结论）；看错误详情，通常是引擎未配置/网络问题 |
 | 收车后 worktree 还在 | 该会话有未审改动，脏 worktree 永不销毁（`kept_worktree: true`）；处理完 CR 后可手动清理 `.tram/worktrees/` |
