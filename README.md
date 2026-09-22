@@ -20,6 +20,8 @@ python -m pip install .                 # 使用
 
 策略引擎：优先使用 OPA（`brew install opa`），未安装时自动降级为内置 Python 策略引擎（语义一致）。
 
+`tram.yaml` 常用配置：`sandbox`（worktree | docker）、`docker_image`、`evm_thresholds`（SPI/CPI 阈值）、`approvers`（干系人审批人名单，如 `release: [你]`——配置后署名不在名单内的审批会被拒绝，未配置不限制）。
+
 ## 5 分钟上手
 
 在**目标项目**仓库根目录：

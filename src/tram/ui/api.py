@@ -238,6 +238,8 @@ def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastA
             return {"ok": True, "detail": f"CR {req.id} -> {status.value} ✅"}
         except HTTPException:
             raise
+        except approvals.ApproverNotAllowedError as exc:  # 干系人名单拒绝
+            raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:  # unknown CR 等
             raise HTTPException(404, str(exc)) from exc
         except Exception as exc:  # noqa: BLE001

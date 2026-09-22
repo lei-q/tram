@@ -45,12 +45,17 @@ class EvmThresholds(BaseModel):
     cpi_min: float = 0.9
 
 
+APPROVER_KINDS = ("baseline", "release", "cr")
+
+
 class TramConfig(BaseModel):
     project_name: str
     sandbox: SandboxMode = SandboxMode.WORKTREE
     policy_engine: PolicyEngineKind = PolicyEngineKind.AUTO
     docker_image: str = "node:22-bookworm-slim"  # 沙箱镜像：引擎 CLI 需已装在镜像内
     evm_thresholds: EvmThresholds = Field(default_factory=EvmThresholds)
+    # 干系人（lite 域）：kind -> 审批人名单；未配置或空名单 = 不限制
+    approvers: dict[str, list[str]] = Field(default_factory=dict)
     knowledge_areas: dict[str, AreaLevel] = Field(
         default_factory=lambda: dict(DEFAULT_KNOWLEDGE_AREAS)
     )

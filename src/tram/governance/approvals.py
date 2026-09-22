@@ -15,14 +15,26 @@ from tram.models.cr import Approval, CRStatus, CRType
 from tram.models.events import EventKind
 
 
+class ApproverNotAllowedError(ValueError):
+    """署名不在该 kind 的审批人名单内（干系人 lite 域）。"""
+
+
 def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
+
+
+def _ensure_approver(ctx: TramContext, kind: str, by: str) -> None:
+    """干系人（lite 域）：名单已配置且非空时，署名必须在名单内。"""
+    allowed = ctx.config.approvers.get(kind, [])
+    if allowed and by not in allowed:
+        raise ApproverNotAllowedError(f"'{by}' 不在 {kind} 审批人名单内（{', '.join(allowed)}）")
 
 
 def approve_baseline(
     ctx: TramContext, by: str, note: str = "", source: str = "tram.cli.baseline"
 ) -> int:
     """HITL: approve the scope baseline (enables G0). Returns baseline version."""
+    _ensure_approver(ctx, "baseline", by)
     state = ctx.load_state()
     baseline = ctx.load_baseline()
     baseline.approved_by = by
@@ -52,6 +64,7 @@ def approve_release(
     ctx: TramContext, by: str, note: str = "", source: str = "tram.cli.approve"
 ) -> None:
     """HITL: approve the release (unblocks g3_closing_gate -> 终点站)."""
+    _ensure_approver(ctx, "release", by)
     state = ctx.load_state()
     state.human_approvals.append(
         Approval(
@@ -80,6 +93,7 @@ def decide_cr(
     source: str = "tram.cli.cr",
 ) -> CRStatus:
     """HITL: approve/reject a change request. Returns the resulting status."""
+    _ensure_approver(ctx, "cr", by)
     store = CRStore(ctx.crs_dir)
     cr = store.load(cr_id)
     if cr is None:
@@ -99,8 +113,8 @@ def decide_cr(
     cr.status = CRStatus.REJECTED if decision == "rejected" else CRStatus.APPROVED
     store.save(cr)
 
-    if decision == "approved" and cr.type == CRType.SCOPE:
-        # 变更即分支：批准的范围变更直接进入基线（版本 +1），并视为已实施
+    if decision == "approved" and cr.type in (CRType.SCOPE, CRType.PROCUREMENT):
+        # 变更即分支：批准的范围/采购变更直接进入基线（版本 +1），并视为已实施
         baseline = ctx.load_baseline()
         baseline.allowed_paths.extend(p for p in cr.impact.changed_paths)
         baseline.version += 1

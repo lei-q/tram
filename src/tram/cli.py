@@ -22,7 +22,7 @@ from tram.context import ROLE_KINDS, TramContext, init_project, load_context
 from tram.cr_store import CRStore
 from tram.governance import approvals, pr_review
 from tram.governance.gate_runner import GateRunner
-from tram.governance.intent_guard import IntentGuard
+from tram.governance.intent_guard import IntentGuard, classify_violations
 from tram.metrics.evm import (
     compute_snapshot,
     escalate_breaches,
@@ -31,7 +31,6 @@ from tram.metrics.evm import (
     save_snapshot,
 )
 from tram.metrics.kpis import defect_mttr, escape_report, mttr_report, rework_report
-from tram.models.cr import CRType
 from tram.models.events import EventKind
 from tram.models.gates import GateStatus
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
@@ -270,7 +269,7 @@ def guard_check(
         state = ctx.load_state()
         cr = CRStore(ctx.crs_dir).create_draft(
             state,
-            CRType.SCOPE,
+            classify_violations(decision.violations),
             changed_paths=decision.violations,
             reason="intent guard: changes outside scope baseline",
             trigger_event_seq=event.seq,
@@ -288,7 +287,7 @@ def guard_check(
     console.print(
         Panel(
             "\n".join(decision.violations),
-            title=f"INTENT BLOCKED 🛑 CR {cr.id} drafted",
+            title=f"INTENT BLOCKED 🛑 CR {cr.id} ({cr.type.value}) drafted",
             border_style="red",
         )
     )
@@ -413,7 +412,7 @@ def agent_run(
                 )
                 cr = CRStore(ctx.crs_dir).create_draft(
                     state,
-                    CRType.SCOPE,
+                    classify_violations(decision.violations),
                     changed_paths=decision.violations,
                     reason=f"agent task {task_id} wrote outside scope baseline",
                     trigger_event_seq=event.seq,

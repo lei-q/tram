@@ -14,6 +14,7 @@ class CRType(enum.StrEnum):
     SCHEDULE = "schedule"
     COST = "cost"
     MAJOR_COST = "major_cost"
+    PROCUREMENT = "procurement"
     RELEASE = "release"
 
 

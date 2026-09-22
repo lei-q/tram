@@ -40,7 +40,7 @@
 
 ## 4. 知识域裁剪（tram.yaml）
 
-integration/scope/schedule/cost/quality/communication/risk = full；resource/procurement/stakeholder = lite。lite 域 Phase 2 起按需展开（采购=依赖引入 CR-lite；干系人=审批人配置）。
+integration/scope/schedule/cost/quality/communication/risk = full；resource/procurement/stakeholder = lite。lite 域展开情况：采购=依赖引入 CR-lite ✅（越界改动命中依赖清单 `**/pyproject.toml`、`**/package.json` 等 20 种模式即按 procurement 建 CR，批准后并入基线）；干系人=审批人配置 ✅（`tram.yaml` 的 `approvers: {baseline|release|cr: [名单]}`，未配置不限制；UI 直连审批同受约束）。
 
 ## 5. 架构（模块即边界，未来即服务边界）
 
@@ -102,6 +102,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 **D8 补充评估（React 版，2026-09）**：薄版 vanilla（无构建、零 Node 工具链、静态资源直接进 wheel、完全离线）在 UI 长到 6 视图（线路图 / 车票夹 / 仪表 / 气象台 / 站台 / 调度日志）后依然稳定，app.js 约 400 行尚未失控；React+Vite 的收益（组件化、TS 类型）要到「多页面 + 多人协作 + 状态更复杂」才会兑现，而成本（构建链、CI、打包）立刻发生。**结论：暂缓迁移**，保持 vanilla + tokens.css 单一视觉源；触发重评的阈值：app.js 超 ~800 行、或出现需要路由的多页需求、或 2+ 人同时改前端。
 
 **已完成（第七批：PR review 流，D5 落地）**：`tram cr link <id> --pr <N>`（repo 从 origin remote 解析，关联落 CR 文件）+ `tram cr sync <id>`——拉取 GitHub PR reviews，确定性映射为裁决（每人取最新一条；有 changes_requested 即驳回，否则有 approved 即批准；只有 commented 不算决定），裁决仍走 approvals 同一条写账路径，`source=tram.github.pr` 记录"裁决来自 PR review"、by 记 reviewer。gh 只是数据源，不进决策逻辑；UI 站台的 CR 行显示关联 PR 并提示 `cr sync`。
+
+**已完成（第八批：lite 域展开）**：procurement CR-lite——Intent Guard 拦截时确定性分类（`classify_violations`：越界路径命中依赖清单即 procurement，否则 scope），拦截面板显示 CR 类型，procurement CR 批准同样并入基线（闭环）；stakeholder 审批人配置——`tram.yaml` 增 `approvers`（baseline/release/cr 三 kind → 署名名单），服务层统一校验（`ApproverNotAllowedError`，CLI 门红 / UI 403），未配置不限制（向后兼容）。
 
 ## 9. 风险登记（项目自身）
 
