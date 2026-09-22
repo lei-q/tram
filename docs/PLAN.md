@@ -83,6 +83,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 ## 7. UI 设计基调（D7/D8 已确认）
 
+**产品纲领（2026-09 定版）**：CLI 命令行模式是基础能力，友好便捷直观的 UI 交互体验才是立命之根本。UI 全功能不等于绕过治理——每个按钮都长在铁轨上：UI 动作派发到与 CLI 相同的确定性服务层（`tram/operations.py`），写 state、写事件流、过 Intent Guard，入口 source（`tram.ui`）如实记账。治理红线不变，能力必须对齐 CLI。
+
 「把治理过程画成一张有轨电车线路图」：过程组=5 站，电车位置=当前阶段，信号灯=门禁（绿过/红阻/橙待人审），工件=车票（证据=打孔，缺孔=虚线 evidence-gap），CR=绕行支线，SPI/CPI=司机仪表盘，事件回放=行车记录仪。视觉：米纸底 #FAF6EE + 五站马卡龙色（杏黄/薄荷/雾蓝/淡藤/藕粉），圆头粗轨道线，贴纸徽章，克制动效，`prefers-reduced-motion` 全程尊重。吉祥物 Trammy 只出现在空态/引导/庆祝。原则：隐喻唯一、红灯必须红得清楚、证据可见、UI 无任何绕过门禁的按钮（审批也写事件流）。
 
 ## 8. Phase 2 进展与预告
@@ -99,11 +101,19 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第六批：UI 审批直连事件流）**：HITL 审批收敛为一条共享代码路径 `governance/approvals.py`（baseline / release / CR 裁决，CLI 与 UI 共用，入口 source 如实记录 `tram.cli.*` / `tram.ui`）；UI 默认仍只读，`tram ui --approve` 开启站台审批——站台上每条待人工事项出现署名表单（by 必填），放行写的是与 CLI 完全相同的事件流记录，不是绕过门禁的按钮；写模式带双 CSRF 防护（每会话令牌 + Origin 校验），共享环境不开启即保持只读。
 
-**D8 补充评估（React 版，2026-09）**：薄版 vanilla（无构建、零 Node 工具链、静态资源直接进 wheel、完全离线）在 UI 长到 6 视图（线路图 / 车票夹 / 仪表 / 气象台 / 站台 / 调度日志）后依然稳定，app.js 约 400 行尚未失控；React+Vite 的收益（组件化、TS 类型）要到「多页面 + 多人协作 + 状态更复杂」才会兑现，而成本（构建链、CI、打包）立刻发生。**结论：暂缓迁移**，保持 vanilla + tokens.css 单一视觉源；触发重评的阈值：app.js 超 ~800 行、或出现需要路由的多页需求、或 2+ 人同时改前端。
+**D8 补充评估（React 版，2026-09）**：薄版 vanilla（无构建、零 Node 工具链、静态资源直接进 wheel、完全离线）在 UI 进入全功能化（调度台/审批直连）后依然稳定——写路径收敛在一个 `callAction` 派发器里，app.js 约 700 行；React+Vite 的收益（组件化、TS 类型）要到「多页面 + 多人协作 + 状态更复杂」才会兑现，而成本（构建链、CI、打包）立刻发生。**结论：暂缓迁移**，保持 vanilla + tokens.css 单一视觉源；文件/会话模块落地时按需拆 ES modules（仍是零构建）；触发重评的阈值：app.js 超 ~1200 行、或出现需要路由的多页需求、或 2+ 人同时改前端。
 
 **已完成（第七批：PR review 流，D5 落地）**：`tram cr link <id> --pr <N>`（repo 从 origin remote 解析，关联落 CR 文件）+ `tram cr sync <id>`——拉取 GitHub PR reviews，确定性映射为裁决（每人取最新一条；有 changes_requested 即驳回，否则有 approved 即批准；只有 commented 不算决定），裁决仍走 approvals 同一条写账路径，`source=tram.github.pr` 记录"裁决来自 PR review"、by 记 reviewer。gh 只是数据源，不进决策逻辑；UI 站台的 CR 行显示关联 PR 并提示 `cr sync`。
 
 **已完成（第八批：lite 域展开）**：procurement CR-lite——Intent Guard 拦截时确定性分类（`classify_violations`：越界路径命中依赖清单即 procurement，否则 scope），拦截面板显示 CR 类型，procurement CR 批准同样并入基线（闭环）；stakeholder 审批人配置——`tram.yaml` 增 `approvers`（baseline/release/cr 三 kind → 署名名单），服务层统一校验（`ApproverNotAllowedError`，CLI 门红 / UI 403），未配置不限制（向后兼容）。
+
+**已完成（第九批：调度台，纲领落地第一步）**：共享服务层 `tram/operations.py`——CLI 动词与 UI 按钮派发同一组确定性服务（gate.run / flow.run / guard.check / task.points / qa.fail / qa.pass / artifact.generate / evm.snapshot / baseline.save），全部写 state + 事件流；UI 增调度台面板（`tram ui --approve` 解锁）：全线运行、G0–G3 单门重跑、Guard 检查、开票、EVM 快照、基线编辑器（schema 校验在服务层、批准仍走站台审批）、行车记录仪控制台（每个动作的结果逐行叙述）；任务板（点数直改 + QA ✓/✗ 闭环，返工链自动建档）；API `POST /api/action`（动词派发，与 /api/approve 共享写模式三道闸：开关/令牌/Origin）+ `GET /api/baseline`；`tram ui` 的 `--approve` 语义从"仅审批"升级为"写模式"（UI 能力对齐 CLI）。第一批寓意动画：到站颠簸（换相位 Trammy 弹跳）、信号翻灯（门禁状态变化灯球放大闪一下）、按钮按压反馈、行驶中按钮摇晃、flow.run 行车记录逐行打出，全部尊重 `prefers-reduced-motion`。
+
+**后续批次（UI 全功能化路线）**：
+- **第十批 · 文件管理**：`/api/files` 列目录/读文件/存文件（限 repo 根内，写前过 Intent Guard 预检），UI 文件树 + 编辑器；UI 的人工编辑对 Guard 可见（与 agent 修改同一套越界判定），不自动 commit。
+- **第十一批 · 引擎会话**：claude 适配器会话支持（--resume / session_id 提取 / 流式输出），jobs + SSE；会话一律经 worktree/docker 沙箱 + Intent Guard；openhands 适配器在此批次调研落地。
+- **第十二批 · 动画精修**：车票打孔、CR 支线岔道、终点站庆祝等隐喻动画全量打磨。
+- 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 
 ## 9. 风险登记（项目自身）
 

@@ -34,8 +34,40 @@
     </section>
 
     <section class="card">
-      <h2>站台审批 · 等人的事都在这（UI 只看不动手，操作回 CLI）</h2>
+      <h2>站台审批 · 等人的事都在这（署名即进事件流，与 CLI 同一条写账路径）</h2>
       <ul id="platform" class="platform"></ul>
+    </section>
+
+    <section class="card">
+      <h2>调度台 · 亲手开车（每个按钮都长在铁轨上）</h2>
+      <p id="console-help" class="console-help" hidden>
+        当前只读 —— <code>tram ui --approve</code> 解锁调度台与站台审批
+      </p>
+      <div class="dispatch-bar">
+        <input id="driver-name" placeholder="司机署名（QA / 基线要落款）" />
+        <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
+        <button class="dispatch-btn" data-verb="gate.run" data-gate="g0_charter_gate">G0</button>
+        <button class="dispatch-btn" data-verb="gate.run" data-gate="g1_planning_gate">G1</button>
+        <button class="dispatch-btn" data-verb="gate.run" data-gate="g2_quality_gate">G2</button>
+        <button class="dispatch-btn" data-verb="gate.run" data-gate="g3_closing_gate">G3</button>
+        <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
+        <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
+        <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
+        <button class="dispatch-btn" id="baseline-open">📝 基线</button>
+      </div>
+      <div id="baseline-editor" class="baseline-editor" hidden>
+        <textarea id="baseline-text" spellcheck="false" rows="14"></textarea>
+        <div class="baseline-bar">
+          <button class="dispatch-btn" id="baseline-save">保存基线（schema 校验后落盘）</button>
+          <button class="dispatch-btn dispatch-btn--ghost" id="baseline-cancel">收起</button>
+        </div>
+      </div>
+      <div id="console" class="console" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2>任务板 · 点数与 QA 闭环（返工链自动建档）</h2>
+      <ul id="task-list" class="task-list"></ul>
     </section>
 
     <section class="card">

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import re
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -15,26 +14,22 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from tram import operations
 from tram.adapters.base import RunnerUnavailableError
 from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
 from tram.context import ROLE_KINDS, TramContext, init_project, load_context
 from tram.cr_store import CRStore
 from tram.governance import approvals, pr_review
-from tram.governance.gate_runner import GateRunner
 from tram.governance.intent_guard import IntentGuard, classify_violations
 from tram.metrics.evm import (
-    compute_snapshot,
-    escalate_breaches,
     evaluate_thresholds,
     latest_snapshot,
-    save_snapshot,
 )
 from tram.metrics.kpis import defect_mttr, escape_report, mttr_report, rework_report
 from tram.models.events import EventKind
 from tram.models.gates import GateStatus
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
-from tram.orchestration import invoke_flow
 from tram.sandbox.docker import DockerSandboxRunner
 from tram.sandbox.worktree import WorktreeSession
 
@@ -85,11 +80,7 @@ def _load_json_plan(path: Path | None) -> dict[str, str]:
 
 
 def _next_task_id(state) -> str:
-    """分配不冲突的任务 id：以现有 id 为准，防止计数器与手工编辑漂移。"""
-    nums = [int(m.group(1)) for t in state.tasks if (m := re.fullmatch(r"T-(\d+)", t.id))]
-    seq = max(state.next_task_seq, max(nums, default=0) + 1)
-    state.next_task_seq = seq + 1
-    return f"T-{seq:03d}"
+    return operations.next_task_id(state)
 
 
 def _render_role_prompt(ctx: TramContext, role: str, task_id: str, prompt: str) -> str:
@@ -204,7 +195,7 @@ def gate_run(gate_id: Annotated[str, typer.Argument(help="e.g. g2_quality_gate")
     """Run a phase gate: deterministic checks + policy decision."""
     try:
         ctx = load_context()
-        result = GateRunner(ctx).run(gate_id)
+        result = operations.gate_run(ctx, gate_id)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -233,7 +224,7 @@ def run() -> None:
     """开到底站为止：沿主线连续过门禁，绿灯推进、红灯必停。"""
     try:
         ctx = load_context()
-        final, engine = invoke_flow(GateRunner(ctx))
+        final, engine = operations.run_flow(ctx)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -255,34 +246,12 @@ def guard_check(
     """Intent Guard: verify changed paths against the scope baseline."""
     try:
         ctx: TramContext = load_context()
-        baseline = ctx.load_baseline()
-        paths = paths or ctx.git.pending_changes()
-        decision = IntentGuard(baseline).check(list(paths))
-        if decision.ok:
-            console.print(f"[green]guard ok ✅ ({len(decision.allowed)} path(s) in scope)[/green]")
-            return
-        event = ctx.events.append(
-            EventKind.INTENT_BLOCKED,
-            source="tram.guard",
-            data={"violations": decision.violations},
-        )
-        state = ctx.load_state()
-        cr = CRStore(ctx.crs_dir).create_draft(
-            state,
-            classify_violations(decision.violations),
-            changed_paths=decision.violations,
-            reason="intent guard: changes outside scope baseline",
-            trigger_event_seq=event.seq,
-        )
-        ctx.state_store.save(state)
-        ctx.events.append(
-            EventKind.CR_CREATED,
-            source="tram.guard",
-            data={"cr": cr.id, "type": cr.type.value, "paths": decision.violations},
-            refs={"event": str(event.seq)},
-        )
+        decision, cr = operations.guard_check(ctx, list(paths) if paths else None)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
+        return
+    if decision.ok:
+        console.print(f"[green]guard ok ✅ ({len(decision.allowed)} path(s) in scope)[/green]")
         return
     console.print(
         Panel(
@@ -597,22 +566,14 @@ def artifact_generate(
     all_: Annotated[bool, typer.Option("--all", help="generate all known kinds")] = False,
 ) -> None:
     """Generate evidence-linked project artifacts (deterministic render)."""
-    from tram.artifacts.generator import ARTIFACT_KINDS, ArtifactGenerator
+    from tram.artifacts.generator import ARTIFACT_KINDS
 
     try:
         ctx = load_context()
         if all_:
             kinds = list(ARTIFACT_KINDS)
-        kinds = kinds or []
-        unknown = [k for k in kinds if k not in ARTIFACT_KINDS]
-        if unknown:
-            raise ValueError(f"unknown kinds: {unknown}; known: {', '.join(ARTIFACT_KINDS)}")
-        if not kinds:
-            raise ValueError("nothing to generate: pass kinds or --all")
-        generator = ArtifactGenerator(ctx)
-        for kind in kinds:
-            artifact = generator.generate(kind)
-            console.print(f"[green]{kind} ✅ {artifact.path}[/green]")
+        for artifact in operations.artifact_generate(ctx, list(kinds or [])):
+            console.print(f"[green]{artifact.kind} ✅ {artifact.path}[/green]")
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
 
@@ -657,28 +618,7 @@ def task_points(
     """Set planned/actual points on a task (the EVM data source)."""
     try:
         ctx = load_context()
-        state = ctx.load_state()
-        record = state.task(task_id)
-        if record is None:
-            raise ValueError(f"unknown task: {task_id} (see `tram task list`)")
-        if est is None and spent is None:
-            raise ValueError("nothing to update: pass --est and/or --spent")
-        if est is not None:
-            record.est_points = est
-        if spent is not None:
-            record.spent_points = spent
-        ctx.state_store.save(state)
-        ctx.events.append(
-            EventKind.TASK_UPDATED,
-            source="tram.task",
-            data={
-                "task": task_id,
-                "est_points": record.est_points,
-                "spent_points": record.spent_points,
-                "status": record.status.value,
-            },
-            refs={"task": task_id},
-        )
+        record = operations.task_points(ctx, task_id, est, spent)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -706,31 +646,8 @@ def evm_snapshot(
 ) -> None:
     """Compute an EVM snapshot; threshold breaches auto-register risks (HITL-free)."""
     try:
-        snap_day = dt.date.fromisoformat(day) if day else None
         ctx = load_context()
-        state = ctx.load_state()
-        snap = compute_snapshot(state, snap_day)
-        path = save_snapshot(ctx, snap)
-        event = ctx.events.append(
-            EventKind.EVM_SNAPSHOT, source="tram.evm", data=snap.model_dump(mode="json")
-        )
-        reasons = evaluate_thresholds(snap, ctx.config.evm_thresholds)
-        new_risks = []
-        if reasons:
-            existing = {r.id for r in state.risks}
-            for risk in escalate_breaches(snap, reasons, trigger_seq=event.seq):
-                if risk.id not in existing:
-                    state.risks.append(risk)
-                    new_risks.append(risk)
-            if new_risks:
-                ctx.state_store.save(state)
-                for risk in new_risks:
-                    ctx.events.append(
-                        EventKind.RISK_REGISTERED,
-                        source="tram.evm",
-                        data={"risk": risk.id, "description": risk.description},
-                        refs={"risk": risk.id, "event": str(event.seq)},
-                    )
+        snap, path, reasons, new_risks = operations.evm_snapshot(ctx, day)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -773,26 +690,8 @@ def qa_fail(
     """QA 复现失败：登记缺陷并自动创建返工任务（rework_of 链）。"""
     try:
         ctx = load_context()
-        state = ctx.load_state()
-        record = state.task(task_id)
-        if record is None:
-            raise ValueError(f"unknown task: {task_id} (see `tram task list`)")
-        record.rework_count += 1
-        rework = TaskRecord(
-            id=_next_task_id(state),
-            title=f"修复 {task_id}: {note.splitlines()[0][:60] if note else 'rework'}",
-            status=TaskStatus.TODO,
-            est_points=record.est_points,
-            rework_of=task_id,
-        )
-        state.tasks.append(rework)
-        ctx.state_store.save(state)
-        ctx.events.append(
-            EventKind.QA_FAILED,
-            source="tram.qa",
-            data={"task": task_id, "rework_task": rework.id, "note": note, "by": by},
-            refs={"task": task_id, "rework_task": rework.id},
-        )
+        rework = operations.qa_fail(ctx, task_id, note, by)
+        record = ctx.load_state().task(task_id)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
@@ -811,20 +710,7 @@ def qa_pass(
     """QA 验证通过：返工闭环（缺陷 MTTR 的终点）。"""
     try:
         ctx = load_context()
-        state = ctx.load_state()
-        record = state.task(task_id)
-        if record is None:
-            raise ValueError(f"unknown task: {task_id} (see `tram task list`)")
-        if record.status != TaskStatus.DONE:
-            record.status = TaskStatus.DONE
-            record.spent_points = record.est_points
-        ctx.state_store.save(state)
-        ctx.events.append(
-            EventKind.QA_PASSED,
-            source="tram.qa",
-            data={"task": task_id, "note": note, "by": by},
-            refs={"task": task_id},
-        )
+        operations.qa_pass(ctx, task_id, note, by)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return

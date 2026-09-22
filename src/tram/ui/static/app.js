@@ -1,5 +1,6 @@
-/* Tram 薄版 UI - 无构建 vanilla JS。数据全部来自只读 API；
-   仅当 `tram ui --approve` 时，站台审批按钮可用（写事件流，与 CLI 同路径）。 */
+/* Tram 薄版 UI - 无构建 vanilla JS。数据来自只读 API；
+   `tram ui --approve` 解锁写模式：调度台（/api/action）与站台审批（/api/approve）
+   都派发到与 CLI 相同的服务层——每个按钮都长在铁轨上。 */
 "use strict";
 
 const PHASES = [
@@ -59,9 +60,10 @@ function buildMap() {
     signalEls[g.id] = group;
   }
 
-  // Trammy 小电车
+  // Trammy 小电车（外层管位移，内层管颠簸动画）
   tramEl = el("g", { class: "tram", id: "tram" });
-  const tram = (n, a) => el(n, a, tramEl);
+  const tramInner = el("g", { class: "tram-inner" }, tramEl);
+  const tram = (n, a) => el(n, a, tramInner);
   tram("rect", { class: "tram-body", x: -48, y: -46, width: 96, height: 40, rx: 13 });
   tram("rect", { class: "tram-window", x: -36, y: -38, width: 20, height: 15, rx: 4 });
   tram("rect", { class: "tram-window", x: -10, y: -38, width: 20, height: 15, rx: 4 });
@@ -74,6 +76,13 @@ function buildMap() {
   el("path", { d: "M32 -19 q5 5 10 0", fill: "none", "stroke-width": 2 }, face);
   tram("text", { class: "zzz", x: 54, y: -48 }).textContent = "zzz";
   moveTram("initiating");
+
+  // 动画收尾：一次性动画结束后摘掉类，方便下次重放
+  tramEl.addEventListener("animationend", () => tramEl.classList.remove("is-depart"));
+  svg.addEventListener("animationend", (ev) => {
+    const g = ev.target.closest(".signal");
+    if (g) g.classList.remove("signal--blip");
+  });
 }
 
 function moveTram(phase) {
@@ -99,6 +108,10 @@ function phaseLabel(id) {
   return p ? p.label : id;
 }
 
+// 变更检测：只在状态真的变了时放一次动画（寓意：到站颠一下、信号翻灯闪一下）
+let prevPhase = null;
+const prevGateStatus = {};
+
 function renderState(state) {
   document.getElementById("project-name").textContent = `Tram · ${state.project_name}`;
   const chip = document.getElementById("phase-chip");
@@ -110,11 +123,28 @@ function renderState(state) {
   base.textContent = state.scope_approved ? `基线 v${state.baseline_version} 已批` : "基线待批";
   base.className = "chip " + (state.scope_approved ? "chip--ok" : "chip--pending");
 
+  if (prevPhase !== null && prevPhase !== state.phase) {
+    tramEl.classList.remove("is-depart");
+    void tramEl.getBoundingClientRect(); // 强制 reflow，让动画可重放
+    tramEl.classList.add("is-depart");
+  }
+  prevPhase = state.phase;
+
   moveTram(state.phase);
   tramEl.classList.toggle("is-waiting", !!state.open_crs.length);
   tramEl.classList.toggle("is-blocked", state.tasks.blocked > 0);
 
-  for (const g of GATES) setSignal(g.id, state.gate_status[g.id] || "idle");
+  for (const g of GATES) {
+    const st = state.gate_status[g.id] || "idle";
+    if (prevGateStatus[g.id] !== undefined && prevGateStatus[g.id] !== st && st !== "idle") {
+      const node = signalEls[g.id];
+      node.classList.remove("signal--blip");
+      void node.getBoundingClientRect();
+      node.classList.add("signal--blip");
+    }
+    prevGateStatus[g.id] = st;
+    setSignal(g.id, st);
+  }
 
   const bubble = document.getElementById("branch-bubble");
   const branchLabel = document.getElementById("branch-label");
@@ -166,6 +196,7 @@ function renderState(state) {
   renderKpis(state.kpi);
   renderWeather(state.risks);
   renderPlatform(state);
+  renderTasks(state.task_list || []);
 }
 
 /* ---------- 站台审批（只读列出待人工的事；--approve 时可就地署名放行） ---------- */
@@ -295,6 +326,250 @@ function toast(msg, isErr) {
   el._t = setTimeout(() => el.classList.remove("toast--show"), 4000);
 }
 
+/* ---------- 调度台：按钮 → /api/action → operations 服务层（CLI 同款） ---------- */
+
+function driverName() {
+  return document.getElementById("driver-name").value.trim();
+}
+
+function applyWriteMode() {
+  const on = Boolean(uiConfig.approvals_enabled);
+  document.getElementById("console-help").hidden = on;
+  for (const btn of document.querySelectorAll(".dispatch-btn")) btn.disabled = !on;
+}
+
+function consoleLine(text, cls = "") {
+  const box = document.getElementById("console");
+  const line = document.createElement("div");
+  line.className = "line" + (cls ? ` ${cls}` : "");
+  const ts = new Date().toLocaleTimeString([], { hour12: false });
+  line.innerHTML = `<span class="line-ts">${ts}</span><span class="line-msg"></span>`;
+  line.querySelector(".line-msg").textContent = text;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+  while (box.children.length > 200) box.removeChild(box.firstChild);
+}
+
+// 叙述员：把服务层返回翻译成行车记录仪口吻的一行行日志
+function narrate(verb, body) {
+  if (verb === "gate.run") {
+    const icon = body.status === "pass" ? "🟢" : body.status === "fail" ? "🔴" : "🟡";
+    consoleLine(`${icon} ${body.gate} → ${body.status}${body.needs_human ? "（待人审）" : ""}`);
+    for (const c of body.checks || []) {
+      consoleLine(`   · ${c.id} ${c.status}`, c.status === "pass" ? "" : "line--err");
+    }
+    for (const r of body.reasons || []) {
+      consoleLine(`   ⚠ ${r}`, body.status === "pass" ? "" : "line--err");
+    }
+  } else if (verb === "flow.run") {
+    const lines = body.journey || [];
+    lines.forEach((line, i) => setTimeout(() => consoleLine("🚋 " + line), i * 160));
+    setTimeout(
+      () => consoleLine(`🏁 停车：${body.stop_reason || "—"}（引擎 ${body.engine}）`),
+      lines.length * 160
+    );
+  } else if (verb === "guard.check") {
+    if (body.ok) {
+      consoleLine("🛡 轨内行驶——变更全部落在基线内");
+    } else {
+      consoleLine(`🛑 越界 ${body.violations.length} 处 → CR ${body.cr}（${body.cr_type}）已立案`, "line--err");
+      for (const v of body.violations) consoleLine(`   · ${v}`, "line--err");
+    }
+  } else if (verb === "artifact.generate") {
+    for (const a of body.artifacts || []) consoleLine(`🎫 ${a.kind} → ${a.path}`);
+  } else if (verb === "evm.snapshot") {
+    consoleLine(
+      `📊 SPI ${body.spi} · CPI ${body.cpi}` +
+        (body.reasons.length ? ` · 越界：${body.reasons.join("；")}` : " · 阈值内")
+    );
+    for (const r of body.new_risks || []) consoleLine(`🌧 自动入险：${r}`, "line--err");
+  } else if (verb === "task.points") {
+    consoleLine(`✍️ ${body.task} 点数更新 est=${body.est} spent=${body.spent}`);
+  } else if (verb === "qa.fail") {
+    consoleLine(`🐛 QA 失败立案 · 返工任务 ${body.rework_task} 已挂上主线`, "line--err");
+  } else if (verb === "qa.pass") {
+    consoleLine(`✅ ${body.task} QA 验证通过 → done`);
+  } else if (verb === "baseline.save") {
+    consoleLine(`📝 基线草稿已保存（v${body.version}）· 批准仍走站台审批`);
+  } else {
+    consoleLine(JSON.stringify(body));
+  }
+}
+
+async function callAction(verb, args = {}, btn = null) {
+  if (!uiConfig.approvals_enabled) {
+    toast("只读模式 —— `tram ui --approve` 解锁调度台", true);
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("is-busy");
+  }
+  try {
+    const res = await fetch("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({ verb, args, by: driverName() }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      consoleLine(`✗ ${verb} 被拒绝：${body.detail || res.status}`, "line--err");
+      toast(body.detail || "调度动作被拒绝", true);
+      return;
+    }
+    narrate(verb, body);
+    refresh();
+  } catch (err) {
+    consoleLine(`✗ ${verb} 请求异常：${err}`, "line--err");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("is-busy");
+    }
+  }
+}
+
+document.querySelector(".dispatch-bar").addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".dispatch-btn");
+  if (!btn || btn.id === "baseline-open") return;
+  const verb = btn.dataset.verb;
+  if (!verb) return;
+  const args = {};
+  if (verb === "gate.run") args.gate = btn.dataset.gate;
+  if (verb === "artifact.generate") args.all = true;
+  callAction(verb, args, btn);
+});
+
+/* ---------- 基线编辑器（schema 校验在服务层，批准在站台） ---------- */
+
+const baselineEditor = document.getElementById("baseline-editor");
+
+document.getElementById("baseline-open").addEventListener("click", async () => {
+  if (!uiConfig.approvals_enabled) {
+    toast("只读模式 —— `tram ui --approve` 解锁基线编辑", true);
+    return;
+  }
+  if (!baselineEditor.hidden) {
+    baselineEditor.hidden = true;
+    return;
+  }
+  try {
+    const body = await fetch("/api/baseline").then((r) => r.json());
+    document.getElementById("baseline-text").value = body.yaml;
+    baselineEditor.hidden = false;
+    document.getElementById("baseline-text").focus();
+  } catch (err) {
+    toast("读取基线失败：" + err, true);
+  }
+});
+
+document.getElementById("baseline-cancel").addEventListener("click", () => {
+  baselineEditor.hidden = true;
+});
+
+document.getElementById("baseline-save").addEventListener("click", async (ev) => {
+  const by = driverName();
+  if (!by) {
+    toast("保存基线要署名 ✍️（司机署名栏）", true);
+    return;
+  }
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({
+        verb: "baseline.save",
+        args: { yaml: document.getElementById("baseline-text").value },
+        by,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.detail || "基线保存失败", true);
+      consoleLine(`✗ baseline.save 被拒绝：${body.detail || res.status}`, "line--err");
+      return;
+    }
+    narrate("baseline.save", body);
+    baselineEditor.hidden = true;
+    refresh();
+  } catch (err) {
+    toast("基线保存请求异常：" + err, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ---------- 任务板：点数直改 + QA 闭环（返工链自动建档） ---------- */
+
+function taskChipCls(status) {
+  if (status === "done") return "chip--ok";
+  if (status === "blocked") return "chip--fail";
+  if (status === "doing") return "chip--pending";
+  return "chip--idle";
+}
+
+function renderTasks(tasks) {
+  const list = document.getElementById("task-list");
+  list.innerHTML = "";
+  if (!tasks.length) {
+    list.innerHTML = '<li class="empty">任务册是空的 —— `tram task add` 落第一笔</li>';
+    return;
+  }
+  const writable = Boolean(uiConfig.approvals_enabled);
+  for (const t of tasks) {
+    const li = document.createElement("li");
+    li.className = "task-row" + (t.rework_of ? " task-row--rework" : "");
+    li.innerHTML = `
+      <span class="task-id">${esc(t.id)}</span>
+      <span class="task-title">${esc(t.title)}${
+        t.rework_of ? ` <small>↩ 返工自 ${esc(t.rework_of)}</small>` : ""
+      }</span>
+      <span class="chip ${taskChipCls(t.status)}">${esc(t.status)}</span>
+      <span class="task-points">
+        <label>est <input type="number" step="0.5" min="0" value="${t.est}" data-task="${esc(
+          t.id
+        )}" data-field="est"></label>
+        <label>spent <input type="number" step="0.5" min="0" value="${t.spent}" data-task="${esc(
+          t.id
+        )}" data-field="spent"></label>
+      </span>
+      ${
+        writable
+          ? `<span class="task-qa">
+        <button class="task-btn task-btn--pass" data-qa="pass" data-task="${esc(t.id)}" title="QA 验证通过 → done">✓</button>
+        <button class="task-btn task-btn--fail" data-qa="fail" data-task="${esc(t.id)}" title="QA 复现失败 → 自动建返工任务">✗</button>
+      </span>`
+          : ""
+      }
+    `;
+    list.appendChild(li);
+  }
+}
+
+document.getElementById("task-list").addEventListener("change", (ev) => {
+  const input = ev.target.closest("input[data-field]");
+  if (!input) return;
+  const row = input.closest(".task-row");
+  const est = row.querySelector('[data-field="est"]').value;
+  const spent = row.querySelector('[data-field="spent"]').value;
+  callAction("task.points", { task: input.dataset.task, est: Number(est), spent: Number(spent) });
+});
+
+document.getElementById("task-list").addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".task-btn");
+  if (!btn) return;
+  const taskId = btn.dataset.task;
+  if (btn.dataset.qa === "fail") {
+    const note = window.prompt(`QA 复现失败记录（${taskId}）——缺陷一句话：`, "");
+    if (note === null) return; // 取消
+    callAction("qa.fail", { task: taskId, note });
+  } else {
+    callAction("qa.pass", { task: taskId, note: "verified from UI" });
+  }
+});
+
 /* ---------- 行车 KPI ---------- */
 
 function fmtDuration(sec) {
@@ -405,6 +680,7 @@ async function boot() {
   } catch (err) {
     console.error("ui-config failed", err);
   }
+  applyWriteMode();
   const events = await fetch("/api/events?limit=60").then((r) => r.json());
   for (const ev of events.reverse()) prependEvent(ev);
   await refresh();

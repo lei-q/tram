@@ -1,9 +1,10 @@
-"""UI API: state / artifacts / events + SSE live tail; optional HITL approvals.
+"""UI API: state / artifacts / events + SSE live tail + 调度台动作派发 + HITL 审批.
 
-The UI is the cab window, not a second brain: it reads .tram/ and streams the
-black box. 默认只读；`tram ui --approve` 开启审批后，POST /api/approve 仍走
-governance.approvals 的同一条写账路径（与 CLI 完全一致），只是把人的决定
-写进事件流——不是绕过门禁的按钮。写模式带双 CSRF 防护（会话令牌 + Origin 校验）。
+产品纲领：CLI 是基础能力，UI 交互才是立命之根本。默认只读；`tram ui --approve`
+开启写模式后，POST /api/action（调度台）与 POST /api/approve（站台审批）都走与
+CLI 完全相同的确定性服务层（tram.operations / governance.approvals）——写 state、
+写事件流、过 Intent Guard，一个按钮都不在铁轨外。写模式带双 CSRF 防护
+（会话令牌 + Origin 校验）。
 """
 
 from __future__ import annotations
@@ -19,8 +20,10 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from tram import operations
+from tram.artifacts.generator import ARTIFACT_KINDS
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance import approvals
@@ -48,6 +51,7 @@ REFRESH_KINDS = {
     "task_updated",
     "qa_failed",
     "qa_passed",
+    "baseline_saved",
 }
 
 
@@ -69,6 +73,14 @@ class ApprovalRequest(BaseModel):
     id: str = ""
     by: str
     note: str = ""
+
+
+class ActionRequest(BaseModel):
+    """调度台动作请求：动词 + 参数，派发到与 CLI 同一条 operations 服务层。"""
+
+    verb: str
+    args: dict = Field(default_factory=dict)
+    by: str = ""  # qa.fail / qa.pass / baseline.save 需要署名
 
 
 def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastAPI:
@@ -123,6 +135,18 @@ def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastA
                 "points_total": sum(t.est_points for t in tasks),
                 "points_done": sum(t.est_points for t in tasks if t.status == TaskStatus.DONE),
             },
+            "task_list": [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "status": t.status.value,
+                    "est": t.est_points,
+                    "spent": t.spent_points,
+                    "rework": t.rework_count,
+                    "rework_of": t.rework_of,
+                }
+                for t in tasks
+            ],
             "open_crs": [
                 {
                     "id": cr.id,
@@ -210,16 +234,106 @@ def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastA
         # 同源可读（无 CORS 头，跨域 JS 读不到响应），令牌只发给本页
         return {"approvals_enabled": allow_approvals, "token": approval_token}
 
-    @app.post("/api/approve")
-    def api_approve(req: ApprovalRequest, request: Request) -> dict:
+    def _require_write(request: Request) -> None:
+        # 写模式三道闸：功能开关、会话令牌、同源 Origin（CSRF）
         if not allow_approvals:
-            raise HTTPException(403, "只读 UI（默认）——`tram ui --approve` 才开启站台审批")
+            raise HTTPException(403, "只读 UI（默认）——`tram ui --approve` 才开启写模式")
         supplied = request.headers.get("x-tram-token", "")
         if supplied != approval_token or not approval_token:
-            raise HTTPException(403, "bad approval token")
+            raise HTTPException(403, "bad write token")
         origin = request.headers.get("origin")
         if origin and urlparse(origin).netloc != request.headers.get("host", ""):
-            raise HTTPException(403, f"cross-origin approval rejected: {origin}")
+            raise HTTPException(403, f"cross-origin write rejected: {origin}")
+
+    # 调度台动词 → operations 服务。每个动词都是 CLI 同款确定性入口，
+    # 这里只做派发与 JSON 化，绝不自带第二套逻辑。
+    def _apply_action(verb: str, args: dict, by: str) -> dict:
+        if verb in {"qa.fail", "qa.pass", "baseline.save"} and not by.strip():
+            raise HTTPException(422, f"{verb} 要署名：by 不能为空")
+        try:
+            if verb == "gate.run":
+                result = operations.gate_run(ctx, str(args.get("gate", "")))
+                return {
+                    "gate": result.gate_id,
+                    "status": result.status.value,
+                    "needs_human": result.needs_human,
+                    "reasons": result.decision_reasons,
+                    "checks": [
+                        {"id": c.id, "status": c.status, "output": c.output[:200]}
+                        for c in result.checks
+                    ],
+                }
+            if verb == "flow.run":
+                final, engine = operations.run_flow(ctx)
+                return {
+                    "engine": engine,
+                    "stop_reason": final.get("stop_reason"),
+                    "journey": final.get("journey", []),
+                }
+            if verb == "guard.check":
+                decision, cr = operations.guard_check(ctx, args.get("paths") or None)
+                return {
+                    "ok": decision.ok,
+                    "violations": decision.violations,
+                    "cr": cr.id if cr else None,
+                    "cr_type": cr.type.value if cr else None,
+                }
+            if verb == "task.points":
+                record = operations.task_points(
+                    ctx, str(args.get("task", "")), args.get("est"), args.get("spent")
+                )
+                return {"task": record.id, "est": record.est_points, "spent": record.spent_points}
+            if verb == "qa.fail":
+                rework = operations.qa_fail(
+                    ctx, str(args.get("task", "")), str(args.get("note", "")), by
+                )
+                return {"task": args.get("task"), "rework_task": rework.id}
+            if verb == "qa.pass":
+                record = operations.qa_pass(
+                    ctx, str(args.get("task", "")), str(args.get("note", "")), by
+                )
+                return {"task": record.id, "status": record.status.value}
+            if verb == "artifact.generate":
+                kinds = list(ARTIFACT_KINDS) if args.get("all") else list(args.get("kinds") or [])
+                arts = operations.artifact_generate(ctx, kinds)
+                return {"artifacts": [{"kind": a.kind, "path": str(a.path)} for a in arts]}
+            if verb == "evm.snapshot":
+                snap, path, reasons, risks = operations.evm_snapshot(ctx, args.get("day"))
+                return {
+                    "date": snap.date.isoformat(),
+                    "spi": snap.spi,
+                    "cpi": snap.cpi,
+                    "reasons": reasons,
+                    "new_risks": [r.id for r in risks],
+                    "path": str(path),
+                }
+            if verb == "baseline.save":
+                version = operations.baseline_save(ctx, str(args.get("yaml", "")), by)
+                return {"version": version}
+            raise HTTPException(400, f"unknown verb: {verb}")
+        except HTTPException:
+            raise
+        except approvals.ApproverNotAllowedError as exc:  # 干系人名单拒绝
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:  # unknown task/gate/kind 等
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, str(exc)) from exc
+
+    @app.post("/api/action")
+    def api_action(req: ActionRequest, request: Request) -> dict:
+        _require_write(request)
+        return _apply_action(req.verb, req.args, req.by)
+
+    @app.get("/api/baseline")
+    def api_baseline() -> dict:
+        baseline = ctx.load_baseline()
+        text = ctx.baseline_file.read_text(encoding="utf-8")
+        return {"yaml": text, "version": baseline.version, "allowed": baseline.allowed_paths}
+
+    @app.post("/api/approve")
+    def api_approve(req: ApprovalRequest, request: Request) -> dict:
+        _require_write(request)
         if not req.by.strip():
             raise HTTPException(422, "审批要署名：by 不能为空")
         source = "tram.ui"

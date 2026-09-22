@@ -64,14 +64,21 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .station-label { fill: var(--ink); font-size: 14px; font-weight: 700; text-anchor: middle; }
 .gate-label { fill: var(--ink-soft); font-size: 11px; font-weight: 700; text-anchor: middle; }
 .signal-stem { stroke: var(--track); stroke-width: 3; }
-.signal circle { fill: var(--line); transition: fill 0.4s; }
+.signal circle { fill: var(--line); transition: fill 0.4s; transform-box: fill-box; transform-origin: center; }
 .signal--ok circle { fill: var(--ok); }
 .signal--fail circle { fill: var(--fail); animation: pulse 1.6s ease-in-out infinite; }
 .signal--blocked_pending_human circle { fill: var(--pending); animation: pulse 1.6s ease-in-out infinite; }
+.signal--blip circle { animation: blip 0.5s ease; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
+}
+/* 翻灯：状态变化瞬间信号灯弹一下（进站看灯，灯变了才知道） */
+@keyframes blip {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.5); }
+  100% { transform: scale(1); }
 }
 
 /* ---- Trammy ---- */
@@ -83,10 +90,20 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .tram .zzz { fill: var(--pending); font-size: 14px; font-weight: 700; opacity: 0; }
 .tram.is-waiting .zzz { opacity: 1; }
 .tram.is-blocked .tram-window { fill: var(--fail); }
+/* 到站颠簸：换相位的瞬间车身轻轻一跳（进站的顿挫感） */
+.tram.is-depart .tram-inner { animation: bob 0.7s ease; }
+
+@keyframes bob {
+  0% { transform: translateY(0); }
+  35% { transform: translateY(-7px); }
+  70% { transform: translateY(2px); }
+  100% { transform: translateY(0); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .tram { transition: none; }
-  .signal--fail circle, .signal--blocked_pending_human circle { animation: none; }
+  .tram.is-depart .tram-inner { animation: none; }
+  .signal--fail circle, .signal--blocked_pending_human circle, .signal--blip circle { animation: none; }
 }
 
 /* ---- 仪表盘 ---- */
@@ -266,3 +283,124 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .events .seq { color: var(--ink-soft); min-width: 42px; }
 .events .kind { font-weight: 700; }
 .events .refs { color: var(--ink-soft); margin-left: auto; text-align: right; }
+
+/* ---- 调度台 ---- */
+.console-help { margin: 0 0 10px; color: var(--ink-soft); font-size: 13px; }
+.console-help code { background: var(--paper); border-radius: 6px; padding: 1px 7px; }
+.dispatch-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#driver-name {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 14px;
+  min-width: 190px;
+}
+.dispatch-btn {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+.dispatch-btn:hover { background: color-mix(in srgb, var(--pending) 16%, var(--paper)); }
+.dispatch-btn:active { transform: translateY(1px) scale(0.96); } /* 按压反馈 */
+.dispatch-btn--main { border-color: color-mix(in srgb, var(--ok) 55%, var(--paper)); }
+.dispatch-btn--ghost { border-style: dashed; font-weight: 400; color: var(--ink-soft); }
+.dispatch-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.dispatch-btn.is-busy { animation: busy 0.9s ease-in-out infinite; } /* 行驶中：按钮轻轻摇晃 */
+
+@keyframes busy {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-2deg); }
+  75% { transform: rotate(2deg); }
+}
+
+/* 行车记录仪控制台 */
+.console {
+  margin-top: 12px;
+  background: var(--paper);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  min-height: 66px;
+}
+.console .line { display: flex; gap: 10px; padding: 1.5px 0; }
+.console .line-ts { color: var(--ink-soft); flex: none; }
+.console .line-msg { white-space: pre-wrap; word-break: break-all; }
+.console .line--err .line-msg { color: var(--fail); font-weight: 700; }
+
+/* 基线编辑器 */
+.baseline-editor { margin-top: 12px; display: grid; gap: 8px; }
+#baseline-text {
+  width: 100%;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  resize: vertical;
+}
+.baseline-bar { display: flex; gap: 8px; }
+
+/* ---- 任务板 ---- */
+.task-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.task-list .empty { color: var(--ink-soft); }
+.task-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 6px 12px;
+}
+.task-row--rework { border-left: 5px solid color-mix(in srgb, var(--pending) 70%, transparent); }
+.task-id { font-family: ui-monospace, monospace; font-weight: 800; font-size: 12.5px; }
+.task-title { flex: 1; min-width: 180px; }
+.task-title small { color: var(--ink-soft); }
+.task-points { display: flex; gap: 10px; font-size: 12px; color: var(--ink-soft); align-items: center; }
+.task-points input {
+  width: 58px;
+  border: 2px solid var(--line);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 1px 6px;
+}
+.task-qa { display: flex; gap: 6px; }
+.task-btn {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  width: 30px;
+  height: 30px;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+.task-btn:active { transform: scale(0.9); }
+.task-btn--pass { border-color: color-mix(in srgb, var(--ok) 55%, var(--paper)); color: var(--ok); }
+.task-btn--fail { border-color: color-mix(in srgb, var(--fail) 55%, var(--paper)); color: var(--fail); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dispatch-btn, .task-btn { transition: none; }
+  .dispatch-btn:active { transform: none; }
+  .dispatch-btn.is-busy { animation: none; }
+}
