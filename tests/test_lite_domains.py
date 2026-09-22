@@ -92,8 +92,14 @@ def test_unconfigured_kind_stays_open(ctx):
 
 def test_ui_approval_also_respects_approvers(ctx, git_repo):
     """UI 直连审批走同一服务，名单对 UI 同样生效。"""
+    from fastapi.testclient import TestClient
 
-    from tests.test_ui_approvals import _writable  # 复用工具函数
+    from tram.ui.api import create_app
+
+    def _writable(repo) -> tuple[TestClient, str]:
+        ui_app = create_app(repo, allow_approvals=True)
+        token = TestClient(ui_app).get("/api/ui-config").json()["token"]
+        return TestClient(ui_app), token
 
     _config_with_approvers(ctx, "release", ["lay"])
     client, token = _writable(git_repo)
