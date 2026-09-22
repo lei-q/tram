@@ -135,6 +135,26 @@ def test_close_clean_session_removes_worktree_and_closes_task(git_repo):
     assert record.status.value == "done"  # 会话收尾任务 DONE
 
 
+def test_chat_on_repo_without_commits_bootstraps_worktree(tmp_path):
+    """零提交仓库（unborn HEAD）挂不了 worktree——首条消息自动补空引导提交再挂。"""
+    repo = tmp_path / "bare"  # autouse fixture 已占了 tmp_path/repo
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    from tram.context import init_project
+
+    ctx = init_project(repo, name="demo")
+    svc = ChatService(ctx, inline=True)
+    svc._engine = lambda name: FakeRunner({"src/hello.py": "x = 1\n"})  # noqa: SLF001 - 测试换装
+    session, job = svc.send_message(None, "hello", by="lay")
+    assert job.status == "ok" and job.commit
+
+    # 引导提交落在 main 打底，会话分支照常从它挂出
+    head = subprocess.run(
+        ["git", "log", "--format=%s", "-1", "main"], cwd=repo, capture_output=True, text=True
+    ).stdout
+    assert "bootstrap" in head
+
+
 def test_close_dirty_session_keeps_worktree(git_repo):
     svc, _ctx = _service(git_repo, {"vendor/pyproject.toml": "a=1\n"})
     session, _job = svc.send_message(None, "越界", by="lay")

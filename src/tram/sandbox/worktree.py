@@ -45,6 +45,7 @@ class WorktreeSession:
     def create(self) -> Path:
         """建 worktree（会话车厢常驻场景直接调它，不进 with 块）。"""
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
+        self._ensure_base_ref()
         proc = subprocess.run(
             ["git", "worktree", "add", "-b", self.branch, str(self.path), self.base_ref],
             cwd=self.repo,
@@ -54,6 +55,36 @@ class WorktreeSession:
         if proc.returncode != 0:
             raise RuntimeError(f"git worktree add failed: {proc.stderr.strip()}")
         return self.path
+
+    def _ensure_base_ref(self) -> None:
+        """零提交仓库（unborn HEAD）挂不了 worktree：补一个空引导提交落底.
+
+        只在 HEAD 尚未诞生时触发——此时分支没有任何可被改写的历史，
+        引导提交不动任何工作区文件（.tram/ 状态保持未跟踪原样）。
+        """
+        head = subprocess.run(
+            ["git", "rev-parse", "--verify", "-q", "HEAD"],
+            cwd=self.repo,
+            capture_output=True,
+            text=True,
+        )
+        if head.returncode == 0:
+            return  # HEAD 有效，无需引导
+        proc = subprocess.run(
+            [
+                "git",
+                *TRAM_IDENTITY,
+                "commit",
+                "--allow-empty",
+                "-m",
+                "tram: bootstrap commit (repo had no commits; worktree needs a base)",
+            ],
+            cwd=self.repo,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"git bootstrap commit failed: {proc.stderr.strip()}")
 
     def pending_changes(self) -> list[str]:
         proc = subprocess.run(
