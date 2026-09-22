@@ -64,7 +64,7 @@ class ClaudeCodeRunner:
         """CompletedProcess -> RunResult（docker 沙箱的阻塞路径复用）。"""
         return self.consume((proc.stdout or "").splitlines())
 
-    def stream(self, task: TaskSpec, workspace: Path) -> Iterator[dict[str, Any]]:
+    def stream(self, task: TaskSpec, workspace: Path, stop_event=None) -> Iterator[dict[str, Any]]:
         """跑引擎并逐事件 yield（会话车厢的流式轨道）。"""
         binary = resolve_binary(self.binary)
         if binary is None:
@@ -94,10 +94,15 @@ class ClaudeCodeRunner:
         # stderr 必须持续排干，否则缓冲写满会卡死子进程
         threading.Thread(target=proc.stderr.read, daemon=True).start()
         for line in proc.stdout:
+            if stop_event is not None and stop_event.is_set():
+                proc.terminate()  # 司机急停：杀引擎进程，本轮作废
+                break
             obj = _parse_json(line)
             if obj is not None:
                 yield obj
         proc.wait()
+        if stop_event is not None and stop_event.is_set():
+            return
         if proc.returncode != 0:
             yield {"type": "error", "exit_code": proc.returncode}
 

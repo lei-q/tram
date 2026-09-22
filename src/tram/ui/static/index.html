@@ -135,7 +135,8 @@
         <div class="chat-hint">开新会话后发第一条消息：立任务 + 建常驻 worktree，之后每条消息跑完即过 Guard</div>
       </div>
       <div class="chat-input-bar">
-        <input id="chat-input" placeholder="对引擎说什么……（Enter 发送）" />
+        <textarea id="chat-input" rows="1" placeholder="对引擎说什么……（Enter 发送 · Shift+Enter 换行）"></textarea>
+        <button class="dispatch-btn dispatch-btn--ghost" id="chat-stop" hidden title="终止本轮引擎进程——本轮作废，不进 Guard">⏹ 停止</button>
         <button class="dispatch-btn dispatch-btn--main" id="chat-send">发送</button>
       </div>
     </section>

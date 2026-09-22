@@ -405,6 +405,59 @@ def test_open_session_rejects_unknown_package(git_repo):
         svc.open_session("fake", "lay", wbs_package="WP-404")
 
 
+def test_stop_job_aborts_round_without_guard(git_repo):
+    """司机急停：引擎进程被终止，本轮作废——不进 Guard、无提交、无知识沉淀。"""
+    import time
+
+    class SlowRunner:
+        name = "fake"
+
+        def stream(self, task, workspace, stop_event=None):
+            for _ in range(200):
+                if stop_event is not None and stop_event.is_set():
+                    return
+                time.sleep(0.01)
+                yield {"type": "assistant", "message": {"content": [{"type": "text", "text": "…"}]}}
+
+    svc = ChatService(load_context(git_repo), inline=False)  # 线程模式才能边跑边停
+    svc._engine = lambda name: SlowRunner()  # noqa: SLF001 - 测试换装
+    session, job = svc.send_message(None, "慢慢来", by="lay")
+    for _ in range(200):
+        if job.status != "running":
+            break
+        if job.lines:  # 已经吐出第一行，进入稳态
+            svc.stop_job(job.id)
+        time.sleep(0.02)
+    assert job.status == "stopped"
+    assert job.commit is None and job.cr is None
+    kinds = [e.kind for e in load_context(git_repo).events.read() if e.source == "tram.chat"]
+    assert EventKind.INTENT_BLOCKED not in kinds
+    with pytest.raises(ValueError, match="已终态"):
+        svc.stop_job(job.id)  # 幂等拒绝
+
+
+def test_knowledge_collector_writes_three_ledgers(git_repo):
+    """知识沉淀：每轮确定性落三本账——需求（消息）/ 变更（提交+知识域）/ 风险（拦截）。"""
+    svc, _ctx = _service(git_repo, {"src/hello.py": "x = 1\n"})
+    session, job = svc.send_message(None, "做一个登录页", by="lay")
+    assert job.status == "ok"
+
+    knowledge = git_repo / ".tram" / "knowledge"
+    req = (knowledge / "requirements.md").read_text(encoding="utf-8")
+    chg = (knowledge / "changes.md").read_text(encoding="utf-8")
+    assert "做一个登录页" in req and session["id"] in req
+    assert job.commit[:8] in chg and "src/hello.py" in chg
+    assert "知识域" in chg and "整合" in chg  # classify_path 归属进账
+    assert not (knowledge / "risks.md").exists()  # 轨内轮次无风险账
+
+    # 越界轮次 → 风险账
+    svc2 = ChatService(load_context(git_repo), inline=True)
+    svc2._engine = lambda name: FakeRunner({"vendor/pyproject.toml": "a=1\n"})  # noqa: SLF001
+    _s2, job2 = svc2.send_message(None, "加依赖", by="lay")
+    risks = (knowledge / "risks.md").read_text(encoding="utf-8")
+    assert job2.cr in risks and "Intent Guard" in risks
+
+
 def test_close_dirty_session_keeps_worktree(git_repo):
     svc, _ctx = _service(git_repo, {"vendor/pyproject.toml": "a=1\n"})
     session, _job = svc.send_message(None, "越界", by="lay")

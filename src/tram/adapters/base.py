@@ -71,7 +71,9 @@ class StreamingRunner(AgentRunner, Protocol):
     所以实现流式即同时获得阻塞语义，不会两套行为。
     """
 
-    def stream(self, task: TaskSpec, workspace: Path) -> Iterator[dict[str, Any]]: ...
+    def stream(
+        self, task: TaskSpec, workspace: Path, stop_event=None
+    ) -> Iterator[dict[str, Any]]: ...
 
 
 def fold_stream(events: Iterable[dict[str, Any]], runner: str) -> RunResult:

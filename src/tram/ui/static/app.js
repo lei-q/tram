@@ -1085,9 +1085,13 @@ function appendChatNote(text, cls) {
 function chatBusy(on) {
   document.getElementById("chat-send").disabled = on;
   document.getElementById("chat-send").textContent = on ? "行驶中…" : "发送";
+  document.getElementById("chat-stop").hidden = !on;
 }
 
+let currentJobId = null; // 正在行驶的 job（急停用）
+
 function streamChatJob(jobId) {
+  currentJobId = jobId;
   if (chatES) chatES.close();
   chatES = new EventSource("/api/chat/stream?job=" + encodeURIComponent(jobId));
   chatES.onmessage = (msg) => {
@@ -1105,6 +1109,9 @@ function streamChatJob(jobId) {
       } else if (job.status === "blocked") {
         appendChatNote(`越界改动已拦截 → CR ${job.cr} 立案，站台审批可裁`, "error");
         toast(`越界立案：CR ${job.cr}`, true);
+      } else if (job.status === "stopped") {
+        appendChatNote("⏹ 本轮已被司机手动停止（未过 Guard，无提交）", "result");
+        toast("本轮已停止");
       } else {
         appendChatNote(`出故障了：${job.error || "未知错误"}`, "error");
         toast("会话出故障：" + (job.error || ""), true);
@@ -1135,6 +1142,7 @@ async function sendChat() {
   chatSessionId = document.getElementById("chat-sessions").value || null;
   appendChatLine({ k: "me", text: message });
   input.value = "";
+  input.style.height = "auto"; // 发送后收起多行
   chatBusy(true);
   try {
     const res = await fetch("/api/chat/send", {
@@ -1165,8 +1173,37 @@ async function sendChat() {
 }
 
 document.getElementById("chat-send").addEventListener("click", sendChat);
-document.getElementById("chat-input").addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") sendChat();
+const chatInputEl = document.getElementById("chat-input");
+chatInputEl.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey) {
+    ev.preventDefault(); // Enter 发送；Shift+Enter 留给换行
+    sendChat();
+  }
+});
+chatInputEl.addEventListener("input", () => {
+  // 自动长高，封顶三行
+  chatInputEl.style.height = "auto";
+  chatInputEl.style.height = Math.min(chatInputEl.scrollHeight, 72) + "px";
+});
+
+/* 司机急停：终止本轮引擎进程（本轮作废，不进 Guard） */
+document.getElementById("chat-stop").addEventListener("click", async () => {
+  if (!currentJobId) return;
+  if (!uiConfig.approvals_enabled) {
+    toast("只读模式无正在行驶的任务", true);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/chat/jobs/${encodeURIComponent(currentJobId)}/stop`, {
+      method: "POST",
+      headers: { "X-Tram-Token": uiConfig.token },
+    });
+    const body = await res.json();
+    if (!res.ok) toast(body.detail || "停止失败", true);
+    else toast("正在停止本轮…");
+  } catch (err) {
+    toast("停止异常：" + err, true);
+  }
 });
 
 document.getElementById("chat-new").addEventListener("click", async () => {

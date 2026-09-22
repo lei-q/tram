@@ -502,6 +502,16 @@ def create_app(
             raise HTTPException(status, str(exc)) from exc
         return {"session": session, "job": chat.job_snapshot(job.id)}
 
+    @app.post("/api/chat/jobs/{job_id}/stop")
+    def api_chat_job_stop(job_id: str, request: Request) -> dict:
+        """司机急停：终止本轮引擎进程——本轮作废，不进 Guard、不沉淀知识。"""
+        _require_write(request)
+        try:
+            return chat.stop_job(job_id)
+        except ValueError as exc:
+            status = 404 if "unknown" in str(exc) else 409
+            raise HTTPException(status, str(exc)) from exc
+
     @app.get("/api/chat/jobs/{job_id}")
     def api_chat_job(job_id: str, after: int = 0) -> dict:
         try:

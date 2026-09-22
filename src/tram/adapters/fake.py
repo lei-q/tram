@@ -21,11 +21,13 @@ class FakeRunner:
     def __init__(self, writes: dict[str, str] | None = None) -> None:
         self.writes = writes or {}
 
-    def stream(self, task: TaskSpec, workspace: Path) -> Iterator[dict[str, Any]]:
+    def stream(self, task: TaskSpec, workspace: Path, stop_event=None) -> Iterator[dict[str, Any]]:
         # 与真引擎同构：没有句柄就现场生成一个（claude 的 session 同款语义）
         sid = task.session_id or f"sess-{uuid.uuid4().hex[:8]}"
         yield {"type": "system", "subtype": "init", "session_id": sid}
         for path, content in self.writes.items():
+            if stop_event is not None and stop_event.is_set():
+                return  # 司机急停：本轮作废，不进 Guard
             target = workspace / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")

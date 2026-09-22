@@ -51,7 +51,7 @@ class OpenHandsRunner:
         """统一事件词汇 -> RunResult（与 claude 适配器共用同一套折叠）。"""
         return fold_stream(events, OpenHandsRunner.name)
 
-    def stream(self, task: TaskSpec, workspace: Path) -> Iterator[dict[str, Any]]:
+    def stream(self, task: TaskSpec, workspace: Path, stop_event=None) -> Iterator[dict[str, Any]]:
         """跑引擎，OpenHands JSONL 逐事件翻译成统一词汇后 yield。"""
         binary = resolve_binary(self.binary)
         if binary is None:
@@ -91,6 +91,9 @@ class OpenHandsRunner:
         agent_text = ""
         saw_error = False
         for line in proc.stdout:
+            if stop_event is not None and stop_event.is_set():
+                proc.terminate()  # 司机急停：杀引擎进程，本轮作废
+                break
             obj = _parse_json(line)
             if obj is None:
                 continue
@@ -98,6 +101,8 @@ class OpenHandsRunner:
             if event is not None:
                 yield event
         proc.wait()
+        if stop_event is not None and stop_event.is_set():
+            return
         if proc.returncode != 0:
             saw_error = True
         # OpenHands 没有 result 事件——进程退出即终局，这里合成统一 result

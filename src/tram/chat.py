@@ -24,6 +24,7 @@ from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
+from tram.governance.domains import classify_path
 from tram.governance.intent_guard import IntentGuard, classify_violations, path_matches
 from tram.models.events import EventKind
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
@@ -49,12 +50,13 @@ class ChatJob:
     id: str
     session_id: str
     task_id: str = ""
-    status: str = "running"  # running | ok | blocked | error
+    status: str = "running"  # running | ok | blocked | error | stopped
     lines: list[dict] = field(default_factory=list)
     summary: str = ""
     error: str | None = None
     commit: str | None = None
     cr: str | None = None
+    stop: threading.Event = field(default_factory=threading.Event)
 
 
 def ui_line(event: dict[str, Any]) -> dict | None:
@@ -514,6 +516,20 @@ class ChatService:
                     session_id, engine_session_id=result.session_id, updated_at=_now()
                 )
 
+            if job.stop.is_set():  # 司机急停：本轮作废，不进 Guard、不沉淀知识
+                job.status = "stopped"
+                self.append_log(
+                    session_id,
+                    {"k": "result", "text": "⏹ 本轮已被司机手动停止（未过 Guard，无提交）"},
+                )
+                ctx.events.append(
+                    EventKind.AGENT_RUN_FINISHED,
+                    source="tram.chat",
+                    data={"task": task_id, "session": session_id, "status": "stopped"},
+                    refs={"task": task_id},
+                )
+                return
+
             if result.status == "error":  # 引擎失败≠治理结论：按 error 落账，不进 Guard 收尾
                 job.status = "error"
                 job.error = result.summary[:300]
@@ -531,6 +547,7 @@ class ChatService:
                 return
 
             self._finish(ctx, session_id, job, ws, result, by)
+            self._collect_knowledge(ctx, session_id, task_id, message, job, ws)
         except RunnerUnavailableError as exc:
             job.status = "error"
             job.error = str(exc)
@@ -579,11 +596,23 @@ class ChatService:
         """流式优先：逐事件喂给 job.lines；无 stream 的 runner 走 run() 兜底。"""
         stream = getattr(engine, "stream", None)
         if stream is not None:
-            result = fold_stream(self._tap(job, stream(spec, workspace)), engine.name)
+            result = fold_stream(
+                self._tap(job, stream(spec, workspace, stop_event=job.stop)), engine.name
+            )
         else:
             result = engine.run(spec, workspace)
         result.task_id = spec.id
         return result
+
+    def stop_job(self, job_id: str) -> dict:
+        """司机急停：置 stop 事件——引擎进程被适配器终止，本轮作废不进 Guard。"""
+        job = self.jobs.get(job_id)
+        if job is None:
+            raise ValueError(f"unknown job: {job_id}")
+        if job.status != "running":
+            raise ValueError(f"job {job_id} 已终态（{job.status}），无需停止")
+        job.stop.set()
+        return {"job": job_id, "stopping": True}
 
     def _tap(self, job: ChatJob, events):
         for ev in events:
@@ -674,6 +703,64 @@ class ChatService:
                 refs={"task": job.task_id},
             )
         job.status = "ok"
+
+    # ---------- 知识沉淀（.tram/knowledge/：整合·管理项目知识） ----------
+
+    def _collect_knowledge(
+        self,
+        ctx: TramContext,
+        session_id: str,
+        task_id: str,
+        message: str,
+        job: ChatJob,
+        ws: WorktreeSession,
+    ) -> None:
+        """每轮跑完，确定性沉淀三本账：需求（用户消息）/ 变更（提交）/ 风险（拦截）.
+
+        纯事实抄录，不解读——语义提炼是人/评审的事，铁轨只保证账不漏。
+        """
+        stamp = f"`{_now()}` · {session_id} · {task_id}"
+        self._append_md(
+            ctx.repo / ".tram" / "knowledge" / "requirements.md",
+            "需求登记（会话抄录）",
+            f"### {stamp}\n\n{message.strip()}\n",
+        )
+        if job.status == "ok" and job.commit:
+            paths = self._commit_paths(ws, job.commit)
+            areas = sorted({classify_path(p)["area"] for p in paths}) if paths else []
+            area_note = f" · 知识域：{'/'.join(areas)}" if areas else ""
+            body = (
+                "\n".join(f"- `{p}`（{classify_path(p)['process']}）" for p in paths)
+                or "- （无文件改动）"
+            )
+            self._append_md(
+                ctx.repo / ".tram" / "knowledge" / "changes.md",
+                "变更登记（会话提交）",
+                f"### {stamp} · commit `{job.commit[:8]}`{area_note}\n\n{body}\n",
+            )
+        if job.status == "blocked" and job.cr:
+            self._append_md(
+                ctx.repo / ".tram" / "knowledge" / "risks.md",
+                "风险登记（越界拦截）",
+                f"### {stamp} · CR {job.cr}\n\n- 越界改动被 Intent Guard 拦截并自动立案，"
+                "站台审批裁决（批准扩基线 / 拒绝关闭）。\n",
+            )
+
+    def _commit_paths(self, ws: WorktreeSession, sha: str) -> list[str]:
+        proc = subprocess.run(
+            ["git", "show", "--name-only", "--pretty=format:", sha],
+            cwd=ws.path,
+            capture_output=True,
+            text=True,
+        )
+        return [p for p in proc.stdout.splitlines() if p.strip()]
+
+    def _append_md(self, path: Path, title: str, entry: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text(f"# {title}\n\n", encoding="utf-8")
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(entry + "\n")
 
     # ---------- job 读侧（API 轮询 / SSE） ----------
 

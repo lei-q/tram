@@ -129,6 +129,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第二十批：WBS 锚定 + 跨会话重叠预警 + 自动驾驶）**：三项落地。(1) **WBS 锚定**：`.tram/wbs.yaml` 工作包（PM 规划工件，{id,title,paths}，schema 坏了报错不静默降级）；会话开/发消息可带 `wbs_package`（UI 会话栏下拉），任务落锚点字段；并线时锚定校验——项目定义了工作包而会话未锚定 → 拒（unanchored），产出越出工作包交付范围 → 拒（anchor_mismatch + outside 清单）；无工作包定义 = 自由模式放行（结果标 anchor: free），渐进收紧不砸存量。(2) **跨会话重叠预警**：并线结果带 `overlaps`——其他在途会话分支也改了相同路径（提示不拦截，UI 红字提醒冲突风险）。(3) **自动驾驶**（`tram/autopilot.py`，JEV 讨论后定型为决策表哑司机——无 LLM 判定）：`route_reasons` 确定性路由（awaiting human/open CR → 锚点硬停；missing artifacts/charter → 自动开票；failed checks → 孵整改会话修 G2 红灯→并线自产会话→重试）；四锚点永不自动（基线批准/CR 裁决/release 放行/升级待人审）；护栏 = 干跑（探门留痕零动作）+ 急停文件 `.tram/autopilot-stop` + 步数预算（默认 10）；每个动作 `AUTOPILOT_STEP` 事件（source=tram.autopilot）。CLI `tram autopilot [--dry-run --max-steps --engine]`；API `POST /api/autopilot`（三道闸+署名）；UI 调度条 🤖 按钮（confirm 提示四锚点与急停方法）。
 
+**已完成（第二十一批：对话控制与知识沉淀）**：(1) **司机急停**：⏹ 按钮终止本轮引擎进程——ChatJob 带 `threading.Event`，三个适配器 stream() 收 `stop_event`（stdout 循环逐行检查，命中即 `proc.terminate()`）；本轮终态 `stopped`：不进 Guard、无提交、不沉淀知识，`AGENT_RUN_FINISHED(status=stopped)` 留痕；终态 job 再停 409；UI 发送中亮停止键、done 显示停止说明。（2) **多行输入**：input 换 textarea，Enter 发送 / Shift+Enter 换行，自动长高三行封顶内滚，发送后收起。(3) **知识沉淀**（整合·管理项目知识子过程落地）：每轮跑完确定性抄录三本账到 `.tram/knowledge/`——`requirements.md`（用户消息即需求陈述，带会话/任务/时间戳）、`changes.md`（有提交才记：commit + 逐路径子过程归属 + 知识域汇总）、`risks.md`（越界拦截才记：CR 与裁决指引）；纯事实抄录不解读——语义提炼留给人，铁轨只保证账不漏。
+
 **后续批次（UI 全功能化路线）**：
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 
