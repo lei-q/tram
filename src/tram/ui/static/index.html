@@ -89,6 +89,26 @@
     </section>
 
     <section class="card">
+      <h2>会话车厢 · 直接与引擎对话（worktree 沙箱 + Intent Guard，轨内自动提交）</h2>
+      <div class="chat-bar">
+        <select id="chat-engine" class="chat-select">
+          <option value="claude">claude code</option>
+          <option value="fake">fake（离线测试）</option>
+        </select>
+        <select id="chat-sessions" class="chat-select"></select>
+        <button class="dispatch-btn" id="chat-new">➕ 新会话</button>
+        <button class="dispatch-btn dispatch-btn--ghost" id="chat-close">🏁 收车</button>
+      </div>
+      <div id="chat-log" class="chat-log">
+        <div class="chat-hint">开新会话后发第一条消息：立任务 + 建常驻 worktree，之后每条消息跑完即过 Guard</div>
+      </div>
+      <div class="chat-input-bar">
+        <input id="chat-input" placeholder="对引擎说什么……（Enter 发送）" />
+        <button class="dispatch-btn dispatch-btn--main" id="chat-send">发送</button>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>风险气象台 · 越界自动入险（P×I 定天气）</h2>
       <div id="weather" class="weather"></div>
     </section>

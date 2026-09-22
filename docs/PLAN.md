@@ -111,8 +111,12 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第十批：文件车厢）**：`/api/files`（列目录，目录优先、`.git` 不展示，标注 pending changes 的 ● ）+ `GET /api/file`（读文件：文本/二进制判定、512KB 截断、并返回该路径的基线归属——打开文件就亮「轨内 ✓ / 越界 ⚠」信号灯）+ `POST /api/file`（保存，写模式三道闸 + 署名必填）。服务层 `operations.file_list/file_read/file_save`：路径钉死在 repo 根内（拒绝对路径/`..`/越界 symlink）；`.tram/`（事件证据）与 `.git/`（历史）结构保护谁都不能写（`ProtectedPath`）；越界保存走与 `tram guard check` 同一条 `guard_check`——拦截内容不落盘 + INTENT_BLOCKED/CR_CREATED 自动立案（依赖清单越界同款 procurement 分类），扩基线（调度台基线编辑器）后重存即过——铁轨闭环。UI 文件车厢：面包屑目录树 + 编辑器 + 保存；`pending_changes` 解析改 `-uall`（untracked 逐文件列出，不再折叠成目录，Guard CLI 同款受益）。不自动 commit——提交仍是显式的治理动作。
 
+**已完成（第十一批：会话车厢）**：UI 直接与代码生成引擎多轮对话，全程治理铁轨。适配器层：`TaskSpec` 增 `session_id`/`resume`——claude `--session-id`（新建）与 `--resume`（续聊），result 事件的 `session_id` 回收入库即句柄；`StreamingRunner` 协议 + 共享 `fold_stream`（assistant.tool_use→轨迹、result→终态），`stream()` 逐事件 yield、`run()` 消费同一事件流，流式与阻塞语义同源。服务层 `tram/chat.py`：会话 = TaskRecord + 常驻 worktree（`tram/chat-XXXX` 分支）+ 引擎句柄，注册表落 `.tram/chat/sessions.json`；每条消息一个 job（线程 + MAX_JOB_LINES 限幅），SSE `/api/chat/stream` 逐行推送、`after` 游标增量拉取；首条消息立任务（AGENT_RUN_STARTED source=tram.chat），每轮跑完过与 `tram agent run` 同一条 Intent Guard——轨内改动由 Tram 提交（commit_refs 留痕）、越界拦截 + 自动立案 procurement CR；收车语义：干净 worktree 移除、脏 worktree 永不销毁（未审工作），任务 DONE、返工/QA 另走闭环。UI 会话车厢：引擎选择（claude/fake）、会话列表、流式对话窗（text/tool/result/error 四种行）、收车按钮；写模式三道闸同款（令牌/署名/Origin）。API：`GET|POST /api/chat/sessions`、`POST /api/chat/send`、`POST /api/chat/sessions/{sid}/close`、`GET /api/chat/jobs/{id}`。
+
+**openhands 调研（第十一批记录，适配器第十三批落地）**：OpenHands 已演进为 Software Agent SDK（事件溯源 + 确定性回放，Action/Observation 事件流）+ Agent Canvas；CLI headless 模式以 `--task`/`--file` 驱动、`--json` 吐 JSONL 事件流，会话身份是 conversation id（可续）。落地路径：新 `OpenHandsRunner` 只需（a）build_cmd 映射 TaskSpec→`--task`+`--json`，（b）把其 JSONL 事件折叠进 `fold_stream`（新增 result 事件映射），（c）conversation id 对接 `session_id`/`resume`；备选走 ACP（其对 Claude Code 已有适配）。风险：SDK 迭代快、event schema 未冻结——先以 `--json` 的实际输出写契约测试再实现。
+
 **后续批次（UI 全功能化路线）**：
-- **第十一批 · 引擎会话**：claude 适配器会话支持（--resume / session_id 提取 / 流式输出），jobs + SSE；会话一律经 worktree/docker 沙箱 + Intent Guard；openhands 适配器在此批次调研落地。
+- **第十三批 · openhands 适配器**：按上述调研落地 OpenHandsRunner + 契约测试。
 - **第十二批 · 动画精修**：车票打孔、CR 支线岔道、终点站庆祝等隐喻动画全量打磨。
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 

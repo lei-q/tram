@@ -38,3 +38,5 @@ class TaskSpec(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     max_turns: int | None = None
     timeout_s: int = 1800
+    session_id: str | None = None  # 引擎会话句柄：新建时给 session-id，续聊时给 resume 目标
+    resume: bool = False  # True → --resume session_id（会话车厢多轮对话）

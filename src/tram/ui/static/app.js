@@ -706,6 +706,218 @@ document.getElementById("file-save").addEventListener("click", async (ev) => {
   }
 });
 
+/* ---------- 会话车厢：与引擎多轮对话（jobs + SSE 流式，Guard 铁轨收尾） ---------- */
+
+let chatSessionId = null;
+let chatES = null; // 当前 job 的 EventSource
+
+async function refreshChatSessions() {
+  try {
+    const sessions = await fetch("/api/chat/sessions").then((r) => r.json());
+    const sel = document.getElementById("chat-sessions");
+    sel.innerHTML = '<option value="">— 选择会话 —</option>';
+    for (const s of sessions) {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = `${s.id} · ${s.engine} · ${s.messages} 条` + (s.task_id ? ` · ${s.task_id}` : "");
+      sel.appendChild(opt);
+      if (s.id === chatSessionId) sel.value = s.id;
+    }
+    if (!sel.value && sessions.length) sel.value = sessions[0].id;
+    chatSessionId = sel.value || null;
+  } catch (err) {
+    console.error("chat sessions failed", err);
+  }
+}
+
+function chatLog() {
+  return document.getElementById("chat-log");
+}
+
+function appendChatLine(line) {
+  const log = chatLog();
+  const hint = log.querySelector(".chat-hint");
+  if (hint) hint.remove();
+  const div = document.createElement("div");
+  if (line.k === "me") {
+    div.className = "chat-row chat-row--me";
+    div.innerHTML = '<span class="chat-who">你</span><span class="chat-bubble"></span>';
+  } else if (line.k === "text") {
+    div.className = "chat-row chat-row--engine";
+    div.innerHTML = '<span class="chat-who">🚋</span><span class="chat-bubble"></span>';
+  } else if (line.k === "tool") {
+    div.className = "chat-row chat-row--tool";
+    div.innerHTML = `<span class="chat-who">🔧</span><span class="chat-bubble">${esc(line.name)}</span>`;
+  } else if (line.k === "result") {
+    div.className = "chat-row chat-row--result";
+    div.innerHTML = '<span class="chat-who">✅</span><span class="chat-bubble"></span>';
+  } else if (line.k === "error") {
+    div.className = "chat-row chat-row--err";
+    div.innerHTML = '<span class="chat-who">⛔</span><span class="chat-bubble"></span>';
+  } else {
+    div.className = "chat-row chat-row--tool";
+    div.innerHTML = '<span class="chat-who">·</span><span class="chat-bubble"></span>';
+  }
+  div.querySelector(".chat-bubble").textContent =
+    line.text || line.input || "";
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function appendChatNote(text, cls) {
+  appendChatLine({ k: cls, text });
+}
+
+function chatBusy(on) {
+  document.getElementById("chat-send").disabled = on;
+  document.getElementById("chat-send").textContent = on ? "行驶中…" : "发送";
+}
+
+function streamChatJob(jobId) {
+  if (chatES) chatES.close();
+  chatES = new EventSource("/api/chat/stream?job=" + encodeURIComponent(jobId));
+  chatES.onmessage = (msg) => {
+    const o = JSON.parse(msg.data);
+    if (o.k === "line") {
+      appendChatLine(o.line);
+    } else if (o.k === "done") {
+      chatES.close();
+      const job = o.job;
+      if (job.status === "ok" && job.commit) {
+        appendChatNote(`已提交 ${(job.commit || "").slice(0, 8)} —— 改动在分支上，Guard 绿灯`, "result");
+        toast("引擎改动已提交 ✅");
+      } else if (job.status === "ok") {
+        appendChatNote("本轮无文件改动", "result");
+      } else if (job.status === "blocked") {
+        appendChatNote(`越界改动已拦截 → CR ${job.cr} 立案，站台审批可裁`, "error");
+        toast(`越界立案：CR ${job.cr}`, true);
+      } else {
+        appendChatNote(`出故障了：${job.error || "未知错误"}`, "error");
+        toast("会话出故障：" + (job.error || ""), true);
+      }
+      chatBusy(false);
+      refresh();
+      refreshChatSessions();
+    }
+  };
+  chatES.onerror = () => {
+    if (chatES && chatES.readyState === EventSource.CLOSED) chatBusy(false);
+  };
+}
+
+async function sendChat() {
+  if (!uiConfig.approvals_enabled) {
+    toast("只读模式 —— `tram ui --approve` 解锁会话车厢", true);
+    return;
+  }
+  const input = document.getElementById("chat-input");
+  const message = input.value.trim();
+  if (!message) return;
+  const by = driverName();
+  if (!by) {
+    toast("发消息要署名 ✍️（调度台司机署名栏）", true);
+    return;
+  }
+  chatSessionId = document.getElementById("chat-sessions").value || null;
+  appendChatLine({ k: "me", text: message });
+  input.value = "";
+  chatBusy(true);
+  try {
+    const res = await fetch("/api/chat/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({
+        session: chatSessionId,
+        engine: document.getElementById("chat-engine").value,
+        message,
+        by,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      appendChatNote(`被拒绝：${body.detail || res.status}`, "error");
+      toast(body.detail || "消息被拒绝", true);
+      chatBusy(false);
+      return;
+    }
+    chatSessionId = body.session.id;
+    document.getElementById("chat-sessions").value = chatSessionId;
+    streamChatJob(body.job.id);
+  } catch (err) {
+    appendChatNote("请求异常：" + err, "error");
+    chatBusy(false);
+  }
+}
+
+document.getElementById("chat-send").addEventListener("click", sendChat);
+document.getElementById("chat-input").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") sendChat();
+});
+
+document.getElementById("chat-new").addEventListener("click", async () => {
+  if (!uiConfig.approvals_enabled) {
+    toast("只读模式 —— `tram ui --approve` 解锁会话车厢", true);
+    return;
+  }
+  const by = driverName();
+  if (!by) {
+    toast("开新会话要署名 ✍️", true);
+    return;
+  }
+  try {
+    const res = await fetch("/api/chat/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({
+        engine: document.getElementById("chat-engine").value,
+        by,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.detail || "开会话失败", true);
+      return;
+    }
+    chatSessionId = body.id;
+    await refreshChatSessions();
+    appendChatNote(`会话 ${body.id} 已开（engine: ${body.engine}）`, "result");
+  } catch (err) {
+    toast("开会话异常：" + err, true);
+  }
+});
+
+document.getElementById("chat-close").addEventListener("click", async () => {
+  const sid = document.getElementById("chat-sessions").value;
+  if (!sid) {
+    toast("先选一条会话", true);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/chat/sessions/${sid}/close`, {
+      method: "POST",
+      headers: { "X-Tram-Token": uiConfig.token },
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.detail || "收车失败", true);
+      return;
+    }
+    appendChatNote(
+      body.kept_worktree
+        ? `会话 ${sid} 已收 · worktree 有未审改动，保留在 ${body.worktree}`
+        : `会话 ${sid} 已收 · worktree 干净移除`,
+      "result"
+    );
+    if (chatSessionId === sid) chatSessionId = null;
+    refreshChatSessions();
+    refresh();
+  } catch (err) {
+    toast("收车异常：" + err, true);
+  }
+});
+
+refreshChatSessions();
+
 /* ---------- 行车 KPI ---------- */
 
 function fmtDuration(sec) {

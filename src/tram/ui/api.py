@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from tram import operations
 from tram.artifacts.generator import ARTIFACT_KINDS
+from tram.chat import ChatService
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance import approvals
@@ -91,9 +92,28 @@ class FileSaveRequest(BaseModel):
     by: str
 
 
-def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastAPI:
+class ChatOpenRequest(BaseModel):
+    """开一条引擎会话：engine（claude|fake）+ 司机署名。"""
+
+    engine: str = "claude"
+    by: str
+
+
+class ChatSendRequest(BaseModel):
+    """会话消息：session 为空即新建会话（engine 仅此时生效）。"""
+
+    session: str | None = None
+    engine: str | None = None
+    message: str
+    by: str
+
+
+def create_app(
+    repo: Path | None = None, allow_approvals: bool = False, inline_jobs: bool = False
+) -> FastAPI:
     ctx: TramContext = load_context(repo)
     approval_token = secrets.token_urlsafe(24) if allow_approvals else ""
+    chat = ChatService(ctx, inline=inline_jobs)  # 会话车厢：jobs + SSE 流式
     app = FastAPI(title="tram-ui", docs_url=None, redoc_url=None)
 
     def snapshot() -> dict:
@@ -370,6 +390,77 @@ def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastA
         except ValueError as exc:  # 路径逃逸等
             raise HTTPException(400, str(exc)) from exc
         return {"ok": True, **saved}
+
+    # ---------- 会话车厢：与代码生成引擎直接对话（jobs + SSE 流式） ----------
+
+    @app.get("/api/chat/sessions")
+    def api_chat_sessions(include_closed: bool = False) -> list[dict]:
+        return chat.list_sessions(include_closed)
+
+    @app.post("/api/chat/sessions")
+    def api_chat_open(req: ChatOpenRequest, request: Request) -> dict:
+        _require_write(request)
+        if not req.by.strip():
+            raise HTTPException(422, "开会话要署名：by 不能为空")
+        try:
+            return chat.open_session(req.engine, req.by)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/chat/sessions/{sid}/close")
+    def api_chat_close(sid: str, request: Request) -> dict:
+        _require_write(request)
+        try:
+            return chat.close_session(sid)
+        except ValueError as exc:
+            status = 404 if "unknown" in str(exc) else 400
+            raise HTTPException(status, str(exc)) from exc
+
+    @app.post("/api/chat/send")
+    def api_chat_send(req: ChatSendRequest, request: Request) -> dict:
+        """发一条消息：引擎在常驻 worktree 里跑，Guard 铁轨收尾（见 tram.chat）。"""
+        _require_write(request)
+        if not req.by.strip():
+            raise HTTPException(422, "发消息要署名：by 不能为空")
+        try:
+            session, job = chat.send_message(req.session, req.message, req.by, engine=req.engine)
+        except ValueError as exc:
+            status = 404 if "unknown session" in str(exc) else 400
+            raise HTTPException(status, str(exc)) from exc
+        return {"session": session, "job": chat.job_snapshot(job.id)}
+
+    @app.get("/api/chat/jobs/{job_id}")
+    def api_chat_job(job_id: str, after: int = 0) -> dict:
+        try:
+            return chat.job_snapshot(job_id, after)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/chat/stream")
+    async def api_chat_stream(job: str) -> StreamingResponse:
+        """SSE：实时推 job 的增量行 + 终态快照（会话车厢的行车记录仪）。"""
+
+        async def events():
+            after = 0
+            while True:
+                try:
+                    snap = chat.job_snapshot(job, after)
+                except ValueError:
+                    yield _sse_obj({"k": "error", "detail": "unknown job"})
+                    return
+                after = snap["next"]
+                for line in snap["lines"]:
+                    yield _sse_obj({"k": "line", "line": line})
+                if snap["status"] != "running":
+                    snap.pop("lines", None)
+                    yield _sse_obj({"k": "done", "job": snap})
+                    return
+                await asyncio.sleep(POLL_SECONDS / 2)
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+
+    def _sse_obj(obj: dict) -> str:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
     @app.post("/api/approve")
     def api_approve(req: ApprovalRequest, request: Request) -> dict:

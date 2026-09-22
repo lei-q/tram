@@ -40,6 +40,10 @@ class WorktreeSession:
         self.kept = False
 
     def __enter__(self) -> Path:
+        return self.create()
+
+    def create(self) -> Path:
+        """建 worktree（会话车厢常驻场景直接调它，不进 with 块）。"""
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
         proc = subprocess.run(
             ["git", "worktree", "add", "-b", self.branch, str(self.path), self.base_ref],
@@ -101,6 +105,14 @@ class WorktreeSession:
         )
         return proc.stdout.strip()
 
+    def remove(self) -> None:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(self.path)],
+            cwd=self.repo,
+            capture_output=True,
+        )
+        subprocess.run(["git", "worktree", "prune"], cwd=self.repo, capture_output=True)
+
     def __exit__(self, exc_type, exc, tb) -> bool:
         if exc_type is not None:
             self.kept = True  # debugging an exception: keep everything
@@ -108,10 +120,5 @@ class WorktreeSession:
         if self.pending_changes() and not self.committed:
             self.kept = True  # never destroy unreviewed work
             return False
-        subprocess.run(
-            ["git", "worktree", "remove", "--force", str(self.path)],
-            cwd=self.repo,
-            capture_output=True,
-        )
-        subprocess.run(["git", "worktree", "prune"], cwd=self.repo, capture_output=True)
+        self.remove()
         return False
