@@ -79,6 +79,37 @@ def test_build_cmd_headless_and_resume():
     assert "--resume" in cmd and cmd[cmd.index("--resume") + 1] == "conv-77f"
 
 
+def test_stream_tolerates_non_json_preamble(tmp_path):
+    """活体发现（openhands 1.16）：stdout 混有人类可读行——banner、无 LLM 配置的
+    拒绝提示、Goodbye、Conversation ID hint。适配器只吃 JSON 行，其余当噪音。"""
+    stub = tmp_path / "openhands-stub"
+    stub.write_text(
+        "#!/bin/sh\ncat <<'TRAM_EOF'\n"
+        "OpenHands CLI terminal UI may not work correctly in this environment\n"
+        + json.dumps({"kind": "ConversationStateUpdateEvent", "key": "id", "value": "conv-live"})
+        + "\n"
+        "\x1b[91mHeadless mode requires existing settings.\x1b[0m\n"
+        "Conversation ID: 783b54c1e602440c973619e12b44bb3c\n"
+        "Goodbye! 👋\n"
+        + json.dumps(
+            {
+                "kind": "MessageEvent",
+                "source": "agent",
+                "llm_message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}]},
+            }
+        )
+        + "\n"
+        "TRAM_EOF\n",
+        encoding="utf-8",
+    )
+    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+
+    result = OpenHandsRunner(binary=str(stub)).run(TaskSpec(id="T-1", prompt="p"), tmp_path)
+    assert result.status == "ok"
+    assert result.session_id == "conv-live"  # JSON 行照常解析，人类行被跳过
+    assert result.summary == "ok"
+
+
 def test_stream_translates_wire_to_unified_events(tmp_path):
     events = list(
         OpenHandsRunner(binary=str(_stub(tmp_path, WIRE_LINES))).stream(

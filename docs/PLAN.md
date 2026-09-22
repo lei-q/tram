@@ -117,8 +117,9 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第十二批：动画精修）**：寓意动画全量补齐，全部只在状态真变化时放一次、全部尊重 `prefers-reduced-motion`。车票打孔：任务 → done 票面留检票圆孔（历史 done 常驻孔印、票面文字淡化），刚验票的放印章落孔动画；CR 支线岔道：新 CR 立案瞬间虚线支线向前流一段（stroke-dashoffset 行进）+ 绕行气泡弹性弹出；终点站庆祝：收尾站 + 任务全清时 Trammy 欢快摇摆、14 张站点色车票彩带徐徐落下（animationend 自清扫，一次到站只庆一次，离开收尾站自动复位）；检票孔/岔道/庆祝动画收尾统一走 animationend 摘类，与既有的到站颠簸、信号翻灯、按钮按压、行车记录仪逐行打印同一套节拍。
 
+**活体验证（第十四批，进行中）**：本机 venv 装 openhands 1.16.0，无 LLM 配置实测 `--headless --json`。三个真实契约点：(1) **stdout 混有人类可读行**——Rich banner、`Headless mode requires existing settings.` 拒绝提示、`Goodbye!`、`Conversation ID: …` hint 都走 stdout，与 JSONL 交替；适配器 `_parse_json` 只吃 JSON 行，其余当噪音，已钉测试（`test_stream_tolerates_non_json_preamble`）。(2) **headless 前置条件**：必须先交互式跑一次 `openhands` 配好 LLM 才能用 headless——live 全链路验证卡在这一步，需要司机提供 API key 配置；(3) spawn 时带上 `OPENHANDS_SUPPRESS_BANNER=1` + `OPENHANDS_DISABLE_ANALYTICS=1` 压噪音。待续：配置 LLM 后跑通完整一轮（ObservationEvent 呈现、`--resume`+`-t` seed 行为）；claude 引擎活体跑通 SSE 全链路。
+
 **后续批次（UI 全功能化路线）**：
-- **第十四批 · 活体验证**：本机装 openhands（`pip install openhands`，需 Python 3.12），会话车厢真机跑一轮，补 ObservationEvent 呈现与 `--resume`+`-t` seed 行为记录；claude 引擎活体跑通 SSE 全链路。
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 
 ## 9. 风险登记（项目自身）

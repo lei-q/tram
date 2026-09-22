@@ -16,6 +16,7 @@ claude 适配器同一套事件词汇（assistant / result / error），下游
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 from collections.abc import Iterable, Iterator
@@ -48,6 +49,12 @@ class OpenHandsRunner:
     def stream(self, task: TaskSpec, workspace: Path) -> Iterator[dict[str, Any]]:
         """跑引擎，OpenHands JSONL 逐事件翻译成统一词汇后 yield。"""
         argv = self.build_cmd(task)
+        # 压掉 banner / 遥测：stdout 是 JSONL 轨道，人类可读噪音越少越好
+        env = {
+            **os.environ,
+            "OPENHANDS_SUPPRESS_BANNER": "1",
+            "OPENHANDS_DISABLE_ANALYTICS": "1",
+        }
         try:
             proc = subprocess.Popen(
                 argv,
@@ -56,6 +63,7 @@ class OpenHandsRunner:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                env=env,
             )
         except FileNotFoundError as exc:
             raise RunnerUnavailableError(
