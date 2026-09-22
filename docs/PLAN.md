@@ -119,6 +119,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **活体验证（第十四批，进行中）**：本机 venv 装 openhands 1.16.0，无 LLM 配置实测 `--headless --json`。三个真实契约点：(1) **stdout 混有人类可读行**——Rich banner、`Headless mode requires existing settings.` 拒绝提示、`Goodbye!`、`Conversation ID: …` hint 都走 stdout，与 JSONL 交替；适配器 `_parse_json` 只吃 JSON 行，其余当噪音，已钉测试（`test_stream_tolerates_non_json_preamble`）。(2) **headless 前置条件**：必须先交互式跑一次 `openhands` 配好 LLM 才能用 headless——live 全链路验证卡在这一步，需要司机提供 API key 配置；(3) spawn 时带上 `OPENHANDS_SUPPRESS_BANNER=1` + `OPENHANDS_DISABLE_ANALYTICS=1` 压噪音。待续：配置 LLM 后跑通完整一轮（ObservationEvent 呈现、`--resume`+`-t` seed 行为）；claude 引擎活体跑通 SSE 全链路。
 
+**已完成（第十五批：驾驶舱改版）**：瀑布流排版推倒重来做驾驶舱——一屏到底不滚屏，操作分主次。骨架 `.shell` 五行 grid（`100dvh`）：顶栏（列车长身份 + 阶段/基线 chip + **司机署名输入**，driverName 全舱共用一份落款）→ 仪态条（仪表 + KPI 从方块卡变灯珠横排，一眼扫全）→ 主甲板（左列：风挡线路图 2fr + **主驾席会话车厢 3fr**——最大连续区域给主操作；右轨：调度台按钮排成 3 列仪表阵 + 站台审批（带待办角标，flex 内滚）+ 行车记录仪）→ 底舱 tab（文件车厢/任务板/车票·绕行/风险气象/调度日志 五面板切换，各自内滚）。基线编辑器改模态浮层不再挤布局；SVG viewBox 裁掉上下空白（0 40 920 176）让风挡在矮舱里更满；`[hidden]!important` 兜底；窄屏（<920px）优雅退化为可滚堆叠。全部 38 个 JS id 挂点原位保留，渲染层零改动——只有 tab 切换与角标两处新 JS。
+
 **后续批次（UI 全功能化路线）**：
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 

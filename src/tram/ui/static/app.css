@@ -1,40 +1,135 @@
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+/* ---- 驾驶舱骨架：一屏到底，页面不滚、面板内滚 ---- */
+html, body { height: 100%; }
 body {
   margin: 0;
-  padding: 16px 20px 48px;
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow: hidden;
 }
-h1 { font-size: 20px; margin: 0; }
+h1 { font-size: 17px; margin: 0; }
 h2 {
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--ink-soft);
-  margin: 0 0 12px;
+  margin: 0 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 
-.topbar {
-  max-width: 980px;
-  margin: 0 auto 16px;
+.shell {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto clamp(170px, 24vh, 250px);
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.topbar { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.logo { font-size: 22px; }
+.topbar-spacer { flex: 1; }
+.driver-box {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-weight: 700;
+  white-space: nowrap;
 }
-.logo { font-size: 26px; }
+#driver-name { min-width: 150px; }
+
+/* 仪态条：仪表 + KPI 一行横排（驾驶舱顶部的告示灯带） */
+.strip {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  overflow-x: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+.strip #gauges, .strip #kpis {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  flex: none;
+}
+
+/* 主甲板：左列（风挡 + 主驾会话），右轨（调度/审批/行车记录） */
+.deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 27vw, 400px);
+  grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+.pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.pane--map { grid-column: 1; grid-row: 1; }
+.pane--map #route-map { flex: 1; min-height: 0; width: 100%; }
+.pane--chat { grid-column: 1; grid-row: 2; }
+
+.rail {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+.rail-card { padding: 10px 14px; }
+.rail-card--platform,
+.rail-card--console {
+  flex: 1 1 0;
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+}
+.rail-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pending) 45%, transparent);
+  color: var(--ink);
+  font-size: 11px;
+}
+
+/* 底舱：tab 化的次要面板 */
+.dock-tabs { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.dock-tab {
+  border: 2px solid var(--line);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  background: var(--card);
+  color: var(--ink-soft);
+  font: inherit;
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 4px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dock-tab.is-active { color: var(--ink); border-color: color-mix(in srgb, var(--pending) 55%, var(--line)); }
+.dock { min-height: 0; min-width: 0; }
+.dock-pane { height: 100%; min-height: 0; overflow: auto; }
+.dock-sub { margin-top: 12px; }
 
 .card {
   background: var(--card);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  padding: 18px 22px;
+  padding: 12px 16px;
+  min-width: 0;
 }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
 
 .chip {
   display: inline-block;
@@ -106,15 +201,18 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   .signal--fail circle, .signal--blocked_pending_human circle, .signal--blip circle { animation: none; }
 }
 
-/* ---- 仪表盘 ---- */
-#gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* ---- 仪表盘（灯珠横排） ---- */
 .gauge {
-  border-radius: var(--radius);
+  border-radius: 999px;
   background: var(--paper);
-  padding: 10px 14px;
+  padding: 3px 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
 }
-.gauge .num { font-size: 22px; font-weight: 800; }
-.gauge .lbl { font-size: 12px; color: var(--ink-soft); }
+.gauge .num { font-size: 15px; font-weight: 800; }
+.gauge .lbl { font-size: 11px; color: var(--ink-soft); }
 .gauge--dim { opacity: 0.55; }
 
 /* ---- CR 支线 ---- */
@@ -123,11 +221,19 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .cr-item { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cr-item code { font-size: 12px; color: var(--ink-soft); }
 
-/* ---- 行车 KPI ---- */
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 10px; margin-top: 10px; }
-.kpi { border-radius: var(--radius); background: var(--paper); padding: 10px 14px; cursor: help; }
-.kpi .num { font-size: 20px; font-weight: 800; }
-.kpi .lbl { font-size: 12px; color: var(--ink-soft); }
+/* ---- 行车 KPI（灯珠横排） ---- */
+.kpi {
+  border-radius: 999px;
+  background: var(--paper);
+  padding: 3px 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: help;
+  white-space: nowrap;
+}
+.kpi .num { font-size: 15px; font-weight: 800; }
+.kpi .lbl { font-size: 11px; color: var(--ink-soft); }
 
 /* ---- 风险气象台 ---- */
 .weather { display: grid; gap: 8px; }
@@ -151,8 +257,18 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .wx-score { font-weight: 700; font-size: 13px; }
 .wx-meta { color: var(--ink-soft); font-size: 12px; }
 
-/* ---- 站台审批 ---- */
-.platform { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+/* ---- 站台审批（右轨内滚） ---- */
+.platform {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 0 0;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 .platform .empty { color: var(--ink-soft); }
 .platform-item {
   display: flex;
@@ -273,8 +389,8 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .events {
   list-style: none;
   margin: 0;
-  padding: 0;
-  max-height: 260px;
+  padding: 0 6px 0 0;
+  height: calc(100% - 24px);
   overflow-y: auto;
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
@@ -284,10 +400,17 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .events .kind { font-weight: 700; }
 .events .refs { color: var(--ink-soft); margin-left: auto; text-align: right; }
 
-/* ---- 调度台 ---- */
-.console-help { margin: 0 0 10px; color: var(--ink-soft); font-size: 13px; }
+/* ---- 调度台（右轨：按钮排成仪表阵） ---- */
+.console-help { margin: 0 0 8px; color: var(--ink-soft); font-size: 12px; }
 .console-help code { background: var(--paper); border-radius: 6px; padding: 1px 7px; }
+.rail-card--dispatch .dispatch-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.rail-card--dispatch .dispatch-bar .dispatch-btn--main { grid-column: 1 / -1; }
 .dispatch-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rail-card--dispatch .dispatch-btn { padding: 4px 6px; font-size: 12.5px; }
 #driver-name {
   border: 2px solid var(--line);
   border-radius: 999px;
@@ -296,7 +419,6 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   font: inherit;
   font-size: 13px;
   padding: 4px 14px;
-  min-width: 190px;
 }
 .dispatch-btn {
   border: 2px solid var(--line);
@@ -323,27 +445,42 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   75% { transform: rotate(2deg); }
 }
 
-/* 行车记录仪控制台 */
+/* 行车记录仪控制台（右轨内自适应滚动） */
 .console {
-  margin-top: 12px;
   background: var(--paper);
   border-radius: var(--radius);
-  padding: 10px 14px;
-  max-height: 240px;
+  padding: 8px 12px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   font-family: ui-monospace, monospace;
   font-size: 12.5px;
-  min-height: 66px;
 }
 .console .line { display: flex; gap: 10px; padding: 1.5px 0; }
 .console .line-ts { color: var(--ink-soft); flex: none; }
 .console .line-msg { white-space: pre-wrap; word-break: break-all; }
 .console .line--err .line-msg { color: var(--fail); font-weight: 700; }
 
-/* 基线编辑器 */
-.baseline-editor { margin-top: 12px; display: grid; gap: 8px; }
+/* 基线编辑器：模态浮层，不挤甲板 */
+.baseline-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.baseline-panel {
+  width: min(92vw, 760px);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
 #baseline-text {
   width: 100%;
+  flex: 1;
+  min-height: 300px;
   border: 2px solid var(--line);
   border-radius: var(--radius);
   background: var(--paper);
@@ -352,9 +489,9 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   font-size: 12.5px;
   line-height: 1.5;
   padding: 10px 12px;
-  resize: vertical;
+  resize: none;
 }
-.baseline-bar { display: flex; gap: 8px; }
+.baseline-bar { display: flex; gap: 8px; margin-top: 8px; }
 
 /* ---- 任务板 ---- */
 .task-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -405,10 +542,16 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   .dispatch-btn.is-busy { animation: none; }
 }
 
-/* ---- 文件车厢 ---- */
-.files { display: grid; grid-template-columns: 250px 1fr; gap: 14px; }
-@media (max-width: 640px) { .files { grid-template-columns: 1fr; } }
-.file-crumbs { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 8px; }
+/* ---- 文件车厢（底舱面板：树与编辑器各自内滚） ---- */
+.files {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
+  height: calc(100% - 24px);
+  min-height: 0;
+}
+.file-tree { display: flex; flex-direction: column; min-height: 0; }
+.file-crumbs { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crumb { cursor: pointer; font-weight: 700; }
 .crumb:hover { color: var(--ink); text-decoration: underline; }
 .crumb-sep { opacity: 0.5; }
@@ -416,7 +559,8 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 320px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   border: 2px solid var(--line);
   border-radius: var(--radius);
@@ -438,7 +582,7 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-dot { color: var(--pending); margin-left: 6px; }
 .file-size { color: var(--ink-soft); font-size: 11.5px; font-family: ui-monospace, monospace; }
-.file-editor { display: grid; gap: 8px; min-width: 0; }
+.file-editor { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
 .file-editor-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .file-editor-bar code {
   flex: 1;
@@ -454,6 +598,8 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 }
 #file-text {
   width: 100%;
+  flex: 1;
+  min-height: 0;
   border: 2px solid var(--line);
   border-radius: var(--radius);
   background: var(--paper);
@@ -462,12 +608,11 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   font-size: 12.5px;
   line-height: 1.5;
   padding: 10px 12px;
-  min-height: 260px;
-  resize: vertical;
+  resize: none;
 }
 
-/* ---- 会话车厢 ---- */
-.chat-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+/* ---- 会话车厢（主驾席：日志区占满余高） ---- */
+.chat-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .chat-select {
   border: 2px solid var(--line);
   border-radius: 999px;
@@ -480,13 +625,14 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
 .chat-log {
   background: var(--paper);
   border-radius: var(--radius);
-  padding: 12px 14px;
-  max-height: 340px;
-  min-height: 120px;
+  padding: 10px 14px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: grid;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  align-content: start;
 }
 .chat-hint { color: var(--ink-soft); font-size: 13px; }
 .chat-row { display: flex; gap: 8px; align-items: baseline; }
@@ -604,3 +750,26 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   .tram.is-cheer .tram-inner { animation: none; }
   .confetti { display: none; }
 }
+
+/* ---- 窄屏回退：驾驶舱是桌面布局，小屏退化为可滚堆叠 ---- */
+@media (max-width: 920px) {
+  body { overflow: auto; }
+  .shell { height: auto; grid-template-rows: none; }
+  .strip { overflow-x: visible; flex-wrap: wrap; }
+  .deck { grid-template-columns: 1fr; grid-template-rows: none; }
+  .pane--map, .pane--chat { grid-column: 1; grid-row: auto; }
+  .pane--map #route-map { min-height: 200px; }
+  .rail { grid-column: 1; grid-row: auto; }
+  .rail-card--platform .platform, .rail-card--console .console { max-height: 260px; }
+  .dock-tabs { overflow-x: visible; flex-wrap: wrap; }
+  .dock { height: 380px; }
+  .dock-pane { height: 100%; }
+  .files { grid-template-columns: 1fr; height: auto; }
+  .file-list, #file-text { min-height: 180px; }
+  .topbar { flex-wrap: wrap; }
+}
+
+/* 底舱面板高度：flex 撑满，替代 calc 估高 */
+#dock-files, #dock-events { display: flex; flex-direction: column; }
+#dock-files .files { flex: 1; height: auto; }
+#dock-events .events { flex: 1; height: auto; }

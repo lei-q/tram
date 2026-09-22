@@ -254,6 +254,11 @@ function renderPlatform(state) {
   if (state.evm && state.evm.breaches && state.evm.breaches.length) {
     items.push({ icon: "🌧", desc: "EVM 越界已自动入险，需要纠偏决策", cmd: "tram evm show  # 看越界详情" });
   }
+  // 角标：待人的事有几件，右轨标题上一眼可见
+  const badge = document.getElementById("platform-badge");
+  badge.hidden = !items.length;
+  badge.textContent = items.length;
+
   if (!items.length) {
     list.innerHTML = '<li class="empty">站台空无一人 —— 没有在等你的事 ✅</li>';
     return;
@@ -1078,6 +1083,15 @@ async function refresh() {
     console.error("refresh failed", err);
   }
 }
+
+/* ---------- 底舱 tabs：次要面板一屏内切换，不滚屏 ---------- */
+
+document.querySelector(".dock-tabs").addEventListener("click", (ev) => {
+  const tab = ev.target.closest(".dock-tab");
+  if (!tab) return;
+  for (const t of document.querySelectorAll(".dock-tab")) t.classList.toggle("is-active", t === tab);
+  for (const p of document.querySelectorAll(".dock-pane")) p.hidden = p.id !== tab.dataset.pane;
+});
 
 async function boot() {
   buildMap();

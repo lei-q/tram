@@ -3,93 +3,41 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Tram · 线路图</title>
+  <title>Tram · 驾驶舱</title>
   <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
+<div class="shell">
+
+  <!-- 顶栏：列车长身份 + 阶段/基线 + 司机署名（全舱共用） -->
   <header class="topbar">
     <span class="logo">🚋</span>
     <h1 id="project-name">Tram</h1>
     <span id="phase-chip" class="chip">…</span>
     <span id="baseline-chip" class="chip chip--idle">基线待批</span>
+    <span class="topbar-spacer"></span>
+    <label class="driver-box" title="司机署名——QA / 基线 / 审批 / 会话都落这个款">
+      <span>👤 司机</span>
+      <input id="driver-name" placeholder="署名（写操作的落款）" />
+    </label>
   </header>
 
-  <main>
-    <section class="card map-card">
-      <h2>线路图 · 治理主线</h2>
-      <svg id="route-map" viewBox="0 0 920 250" role="img" aria-label="项目治理线路图"></svg>
+  <!-- 仪态条：仪表 + KPI 一行横排，一眼扫全 -->
+  <div class="strip">
+    <div id="gauges"></div>
+    <div id="kpis" class="kpis"></div>
+  </div>
+
+  <!-- 主甲板：左风挡 + 主驾（会话），右轨（调度/审批/行车记录） -->
+  <div class="deck">
+    <section class="card pane pane--map">
+      <h2>线路图 · 风挡（五站主线 + 信号门禁）</h2>
+      <svg id="route-map" viewBox="0 40 920 176" role="img" aria-label="项目治理线路图"></svg>
     </section>
 
-    <section class="grid">
-      <div class="card">
-        <h2>司机仪表盘</h2>
-        <div id="gauges"></div>
-        <div id="kpis" class="kpis"></div>
-      </div>
-      <div class="card">
-        <h2>绕行支线 · 变更请求</h2>
-        <ul id="cr-list"></ul>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>站台审批 · 等人的事都在这（署名即进事件流，与 CLI 同一条写账路径）</h2>
-      <ul id="platform" class="platform"></ul>
-    </section>
-
-    <section class="card">
-      <h2>调度台 · 亲手开车（每个按钮都长在铁轨上）</h2>
-      <p id="console-help" class="console-help" hidden>
-        当前只读 —— <code>tram ui --approve</code> 解锁调度台与站台审批
-      </p>
-      <div class="dispatch-bar">
-        <input id="driver-name" placeholder="司机署名（QA / 基线要落款）" />
-        <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
-        <button class="dispatch-btn" data-verb="gate.run" data-gate="g0_charter_gate">G0</button>
-        <button class="dispatch-btn" data-verb="gate.run" data-gate="g1_planning_gate">G1</button>
-        <button class="dispatch-btn" data-verb="gate.run" data-gate="g2_quality_gate">G2</button>
-        <button class="dispatch-btn" data-verb="gate.run" data-gate="g3_closing_gate">G3</button>
-        <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
-        <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
-        <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
-        <button class="dispatch-btn" id="baseline-open">📝 基线</button>
-      </div>
-      <div id="baseline-editor" class="baseline-editor" hidden>
-        <textarea id="baseline-text" spellcheck="false" rows="14"></textarea>
-        <div class="baseline-bar">
-          <button class="dispatch-btn" id="baseline-save">保存基线（schema 校验后落盘）</button>
-          <button class="dispatch-btn dispatch-btn--ghost" id="baseline-cancel">收起</button>
-        </div>
-      </div>
-      <div id="console" class="console" aria-live="polite"></div>
-    </section>
-
-    <section class="card">
-      <h2>任务板 · 点数与 QA 闭环（返工链自动建档）</h2>
-      <ul id="task-list" class="task-list"></ul>
-    </section>
-
-    <section class="card">
-      <h2>文件车厢 · 项目文件（● = 有未提交改动 · 保存先过 Intent Guard，越界自动立案）</h2>
-      <div class="files">
-        <div class="file-tree">
-          <div id="file-crumbs" class="file-crumbs"></div>
-          <ul id="file-list" class="file-list"></ul>
-        </div>
-        <div class="file-editor" id="file-editor" hidden>
-          <div class="file-editor-bar">
-            <code id="file-path"></code>
-            <span id="file-guard" class="chip chip--idle"></span>
-            <button class="dispatch-btn" id="file-save">保存</button>
-          </div>
-          <textarea id="file-text" spellcheck="false"></textarea>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>会话车厢 · 直接与引擎对话（worktree 沙箱 + Intent Guard，轨内自动提交）</h2>
+    <section class="card pane pane--chat">
+      <h2>会话车厢 · 主驾席（直接与引擎对话 · Guard 铁轨 · 轨内自动提交）</h2>
       <div class="chat-bar">
         <select id="chat-engine" class="chat-select">
           <option value="claude">claude code</option>
@@ -109,22 +57,100 @@
       </div>
     </section>
 
-    <section class="card">
+    <aside class="rail">
+      <section class="card rail-card rail-card--dispatch">
+        <h2>调度台 · 亲手开车（每个按钮都长在铁轨上）</h2>
+        <p id="console-help" class="console-help" hidden>
+          当前只读 —— <code>tram ui --approve</code> 解锁调度台与站台审批
+        </p>
+        <div class="dispatch-bar">
+          <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
+          <button class="dispatch-btn" data-verb="gate.run" data-gate="g0_charter_gate">G0</button>
+          <button class="dispatch-btn" data-verb="gate.run" data-gate="g1_planning_gate">G1</button>
+          <button class="dispatch-btn" data-verb="gate.run" data-gate="g2_quality_gate">G2</button>
+          <button class="dispatch-btn" data-verb="gate.run" data-gate="g3_closing_gate">G3</button>
+          <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
+          <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
+          <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
+          <button class="dispatch-btn" id="baseline-open">📝 基线</button>
+        </div>
+      </section>
+
+      <section class="card rail-card rail-card--platform">
+        <h2>站台审批 · 等人的事<span id="platform-badge" class="rail-badge" hidden></span></h2>
+        <ul id="platform" class="platform"></ul>
+      </section>
+
+      <section class="card rail-card rail-card--console">
+        <h2>行车记录仪</h2>
+        <div id="console" class="console" aria-live="polite"></div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- 底舱：次要面板 tab 化，一屏内切换不滚屏 -->
+  <nav class="dock-tabs" role="tablist" aria-label="底舱面板">
+    <button class="dock-tab is-active" data-pane="dock-files" role="tab">📁 文件车厢</button>
+    <button class="dock-tab" data-pane="dock-tasks" role="tab">📋 任务板</button>
+    <button class="dock-tab" data-pane="dock-arts" role="tab">🎫 车票 · 绕行</button>
+    <button class="dock-tab" data-pane="dock-weather" role="tab">🌤 风险气象</button>
+    <button class="dock-tab" data-pane="dock-events" role="tab">📜 调度日志</button>
+  </nav>
+  <div class="dock">
+    <section class="card dock-pane is-active" id="dock-files" role="tabpanel">
+      <h2>文件车厢 · 项目文件（● = 有未提交改动 · 保存先过 Intent Guard，越界自动立案）</h2>
+      <div class="files">
+        <div class="file-tree">
+          <div id="file-crumbs" class="file-crumbs"></div>
+          <ul id="file-list" class="file-list"></ul>
+        </div>
+        <div class="file-editor" id="file-editor" hidden>
+          <div class="file-editor-bar">
+            <code id="file-path"></code>
+            <span id="file-guard" class="chip chip--idle"></span>
+            <button class="dispatch-btn" id="file-save">保存</button>
+          </div>
+          <textarea id="file-text" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section class="card dock-pane" id="dock-tasks" role="tabpanel" hidden>
+      <h2>任务板 · 点数与 QA 闭环（返工链自动建档）</h2>
+      <ul id="task-list" class="task-list"></ul>
+    </section>
+
+    <section class="card dock-pane" id="dock-arts" role="tabpanel" hidden>
+      <h2>车票夹 · 工件（打孔 = 证据已验）</h2>
+      <div id="tickets" class="tickets"></div>
+      <h2 class="dock-sub">绕行支线 · 变更请求</h2>
+      <ul id="cr-list"></ul>
+    </section>
+
+    <section class="card dock-pane" id="dock-weather" role="tabpanel" hidden>
       <h2>风险气象台 · 越界自动入险（P×I 定天气）</h2>
       <div id="weather" class="weather"></div>
     </section>
 
-    <section class="card">
-      <h2>车票夹 · 工件（打孔 = 证据已验）</h2>
-      <div id="tickets" class="tickets"></div>
-    </section>
-
-    <section class="card">
-      <h2>调度日志 · 行车记录仪</h2>
+    <section class="card dock-pane" id="dock-events" role="tabpanel" hidden>
+      <h2>调度日志 · 事件黑匣子</h2>
       <ul id="events" class="events"></ul>
     </section>
-  </main>
+  </div>
 
-  <script src="app.js"></script>
+  <!-- 基线编辑器：浮层模态，不挤甲板 -->
+  <div id="baseline-editor" class="baseline-editor" hidden>
+    <div class="baseline-panel card">
+      <h2>基线编辑器 · schema 校验后落盘（批准仍走站台审批）</h2>
+      <textarea id="baseline-text" spellcheck="false" rows="14"></textarea>
+      <div class="baseline-bar">
+        <button class="dispatch-btn" id="baseline-save">保存基线（schema 校验后落盘）</button>
+        <button class="dispatch-btn dispatch-btn--ghost" id="baseline-cancel">收起</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="app.js"></script>
 </body>
 </html>
