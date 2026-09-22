@@ -781,6 +781,38 @@ def kpi() -> None:
 
 
 @app.command()
+@app.command()
+def autopilot(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="只报决策不执行（预演下一动作）")
+    ] = False,
+    max_steps: Annotated[int, typer.Option(help="步数预算，防打转")] = 10,
+    engine: Annotated[str, typer.Option(help="整改会话引擎 fake|claude|openhands")] = "fake",
+) -> None:
+    """自动驾驶：锚点之间自动推进，锚点处硬停（决策表司机，判定无 LLM）。"""
+    from tram.autopilot import Autopilot
+
+    try:
+        ctx = load_context()
+        result = Autopilot(ctx, engine=engine, dry_run=dry_run, max_steps=max_steps).run()
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    for line in result["journey"]:
+        console.print(line)
+    console.print(
+        Panel(
+            result["stop"],
+            title=(
+                f"自动驾驶（{result['mode']} · {result['actions']} 个动作"
+                f" · engine={result['engine']}）"
+            ),
+            border_style="green" if "绿灯" in result["stop"] else "yellow",
+        )
+    )
+
+
+@app.command()
 def replay(
     kind: Annotated[str | None, typer.Option(help="filter by event kind")] = None,
     limit: Annotated[int, typer.Option(help="show last N events")] = 20,

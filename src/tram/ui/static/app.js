@@ -995,9 +995,17 @@ document.getElementById("chat-merge").addEventListener("click", async () => {
       return;
     }
     if (body.merged) {
-      appendChatNote(`🔀 已并线（${(body.commit || "").slice(0, 8)} · ${body.paths.length} 个路径进主线）`, "result");
+      const anchorNote = body.anchor && body.anchor !== "free" ? ` · 锚定 ${body.anchor}` : " · 自由模式（项目未定义 WBS 工作包）";
+      appendChatNote(`🔀 已并线（${(body.commit || "").slice(0, 8)} · ${body.paths.length} 个路径进主线${anchorNote}）`, "result");
+      if ((body.overlaps || []).length) {
+        const lines = body.overlaps.map((o) => `${o.path} ↔ ${o.session}`).join("、");
+        appendChatNote(`⚠️ 跨会话重叠预警：${lines} —— 另一条在途会话也改了这些路径，并线时留意冲突`, "error");
+      }
       toast("会话分支已并回主线 ✅");
       refresh();
+    } else if (body.reason === "unanchored" || body.reason === "anchor_mismatch") {
+      appendChatNote(`锚定校验未过：${body.detail}${body.outside ? `（越出：${body.outside.join("、")}）` : ""}`, "error");
+      toast(body.detail || "锚定校验未过", true);
     } else if (body.reason === "blocked") {
       appendChatNote(`越界路径被拦 → CR ${body.cr} 立案，站台审批放行或扩基线后重试`, "error");
       toast(`并线立案：CR ${body.cr}`, true);
@@ -1135,6 +1143,7 @@ async function sendChat() {
       body: JSON.stringify({
         session: chatSessionId,
         engine: document.getElementById("chat-engine").value,
+        wbs_package: document.getElementById("chat-package").value || null,
         message,
         by,
       }),
@@ -1176,6 +1185,7 @@ document.getElementById("chat-new").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
       body: JSON.stringify({
         engine: document.getElementById("chat-engine").value,
+        wbs_package: document.getElementById("chat-package").value || null,
         by,
       }),
     });
@@ -1223,6 +1233,68 @@ document.getElementById("chat-close").addEventListener("click", async () => {
 });
 
 refreshChatSessions().then(() => loadChatLog(chatSessionId)); // 刷新页面还原会话历史
+
+/* WBS 工作包下拉（.tram/wbs.yaml，PM 规划工件）；无工作包 = 自由模式 */
+async function loadWbsPackages() {
+  const sel = document.getElementById("chat-package");
+  try {
+    const body = await fetch("/api/wbs").then((r) => r.json());
+    sel.innerHTML = '<option value="">🧩 自由（未锚定）</option>';
+    for (const p of body.packages || []) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = `${p.id} · ${p.title || ""}（${(p.paths || []).join(" ")}）`;
+      sel.appendChild(opt);
+    }
+  } catch (err) {
+    console.error("wbs failed", err);
+  }
+}
+
+/* 自动驾驶：决策表司机，锚点硬停（confirm 后才点火） */
+document.getElementById("autopilot-run").addEventListener("click", async (ev) => {
+  if (!uiConfig.approvals_enabled) {
+    toast("只读模式 —— `tram ui --approve` 解锁自动驾驶", true);
+    return;
+  }
+  const by = driverName();
+  if (!by) {
+    toast("自动驾驶要署名 ✍️（顶栏司机署名）", true);
+    return;
+  }
+  if (
+    !window.confirm(
+      "点火自动驾驶？\n锚点之间自动推进（缺件自动开票、G2 红灯自动派整改会话并线）；\n基线批准 / CR 裁决 / release 放行四个锚点会硬停等你。\n急停：建 .tram/autopilot-stop 文件。"
+    )
+  )
+    return;
+  const btn = ev.target.closest(".dispatch-btn");
+  btn.disabled = true;
+  btn.classList.add("is-busy");
+  try {
+    const res = await fetch("/api/autopilot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({ dry_run: false, by }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.detail || "自动驾驶被拒", true);
+      return;
+    }
+    for (const line of body.journey || []) consoleLine("🤖 " + line);
+    consoleLine(`🏁 自动驾驶停车：${body.stop}（${body.actions} 个动作）`);
+    toast(`自动驾驶停车：${body.stop}`);
+    refresh();
+  } catch (err) {
+    toast("自动驾驶异常：" + err, true);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-busy");
+  }
+});
+
+loadWbsPackages();
 
 /* ---------- 行车 KPI ---------- */
 

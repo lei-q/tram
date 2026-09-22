@@ -28,6 +28,7 @@ class TaskRecord(BaseModel):
     commit_refs: list[str] = Field(default_factory=list)
     rework_count: int = 0
     rework_of: str | None = None  # 上游任务 id（QA 返工链）
+    wbs_package: str | None = None  # 锚定的 WBS 工作包（.tram/wbs.yaml 的 id）
 
 
 class TaskSpec(BaseModel):

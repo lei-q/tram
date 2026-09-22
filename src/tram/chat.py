@@ -24,7 +24,7 @@ from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
-from tram.governance.intent_guard import IntentGuard, classify_violations
+from tram.governance.intent_guard import IntentGuard, classify_violations, path_matches
 from tram.models.events import EventKind
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
 from tram.sandbox.worktree import TRAM_IDENTITY, WorktreeSession
@@ -161,9 +161,13 @@ class ChatService:
                 break
         self._save_sessions(sessions)
 
-    def open_session(self, engine: str, by: str) -> dict:
+    def open_session(self, engine: str, by: str, wbs_package: str | None = None) -> dict:
         if engine not in ENGINES:
             raise ValueError(f"unknown engine '{engine}' ({' | '.join(ENGINES)})")
+        if wbs_package:
+            packages = {p["id"] for p in self.ctx.load_wbs()}
+            if wbs_package not in packages:
+                raise ValueError(f"unknown wbs package: {wbs_package}（见 .tram/wbs.yaml）")
         nums = [
             int(m.group(1))
             for s in self._load_sessions()
@@ -178,6 +182,7 @@ class ChatService:
             "worktree": None,
             "status": "open",
             "created_by": by,
+            "wbs_package": wbs_package,
             "messages": 0,
             "created_at": _now(),
             "updated_at": _now(),
@@ -279,6 +284,11 @@ class ChatService:
                 "paths": changed,
             }
 
+        # WBS 锚定校验：项目定义了工作包就必须对得上号（自由模式除外）
+        anchor_block = self._check_anchor(session, changed)
+        if anchor_block is not None:
+            return anchor_block
+
         merge_msg = f"tram: merge session {session_id} ({len(changed)} paths)\n\n{COMMIT_TRAILER}"
         proc = subprocess.run(
             ["git", *TRAM_IDENTITY, "merge", "--no-ff", session["branch"], "-m", merge_msg],
@@ -311,7 +321,66 @@ class ChatService:
             data={"session": session_id, "commit": sha, "paths": changed, "by": by},
             refs={"commit": sha, "task": session.get("task_id") or ""},
         )
-        return {"merged": True, "commit": sha, "paths": changed}
+        return {
+            "merged": True,
+            "commit": sha,
+            "paths": changed,
+            "anchor": self._anchor_of(session),
+            "overlaps": self._session_overlaps(session_id, changed),
+        }
+
+    def _anchor_of(self, session: dict) -> str:
+        """会话锚定的工作包 id；自由模式返回 'free'。"""
+        packages = self.ctx.load_wbs()
+        if not packages:
+            return "free"
+        return session.get("wbs_package") or "free"
+
+    def _check_anchor(self, session: dict, changed: list[str]) -> dict | None:
+        """WBS 锚定校验：返回 None 放行，否则返回拒绝结果。"""
+        packages = self.ctx.load_wbs()
+        if not packages:
+            return None  # 自由模式：没有工作包定义，不强制锚定
+        pkg_id = session.get("wbs_package")
+        if not pkg_id:
+            return {
+                "merged": False,
+                "reason": "unanchored",
+                "detail": "项目已定义 WBS 工作包，本会话未锚定——开会话时选工作包（.tram/wbs.yaml）",
+                "paths": changed,
+            }
+        pkg = next((p for p in packages if p["id"] == pkg_id), None)
+        if pkg is None:
+            return {
+                "merged": False,
+                "reason": "unanchored",
+                "detail": f"工作包 {pkg_id} 已不在 .tram/wbs.yaml 里（规划变更了？）——重新锚定后再并线",  # noqa: E501
+                "paths": changed,
+            }
+        outside = [p for p in changed if not path_matches(p, pkg["paths"])]
+        if outside:
+            return {
+                "merged": False,
+                "reason": "anchor_mismatch",
+                "detail": f"改动越出工作包 {pkg_id}（{pkg.get('title', '')}）的交付范围",
+                "outside": outside,
+                "paths": changed,
+            }
+        return None
+
+    def _session_overlaps(self, session_id: str, changed: list[str]) -> list[dict]:
+        """跨会话路径重叠预警：其他在途会话的分支也改了同样的路径（提示，不拦截）。"""
+        overlaps: list[dict] = []
+        for other in self.list_sessions():
+            if other["id"] == session_id or not other.get("branch"):
+                continue
+            try:
+                theirs = self._branch_changes(other["branch"])
+            except subprocess.CalledProcessError:
+                continue  # 分支可能已被收车清理
+            for path in sorted(set(changed) & set(theirs)):
+                overlaps.append({"path": path, "session": other["id"]})
+        return overlaps
 
     def _branch_changes(self, branch: str) -> list[str]:
         """分支领先主线的变更路径（merge-base..branch）。"""
@@ -354,12 +423,17 @@ class ChatService:
     # ---------- 消息 → job ----------
 
     def send_message(
-        self, session_id: str | None, message: str, by: str, engine: str | None = None
+        self,
+        session_id: str | None,
+        message: str,
+        by: str,
+        engine: str | None = None,
+        wbs_package: str | None = None,
     ) -> tuple[dict, ChatJob]:
         if not message.strip():
             raise ValueError("message is empty")
         if session_id is None:
-            session = self.open_session(engine or "claude", by)
+            session = self.open_session(engine or "claude", by, wbs_package)
         else:
             session = self.get_session(session_id)
             if session is None:
@@ -395,6 +469,7 @@ class ChatService:
                         id=task_id,
                         title=message.splitlines()[0][:80],
                         status=TaskStatus.DOING,
+                        wbs_package=session.get("wbs_package"),
                     )
                 )
                 ctx.state_store.save(state)  # 先落盘，_finish 重新 load 才看得到

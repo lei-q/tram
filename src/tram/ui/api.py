@@ -55,6 +55,7 @@ REFRESH_KINDS = {
     "qa_passed",
     "baseline_saved",
     "session_merged",
+    "autopilot_step",
 }
 
 
@@ -94,11 +95,21 @@ class FileSaveRequest(BaseModel):
     by: str
 
 
+class AutopilotRequest(BaseModel):
+    """自动驾驶请求：决策表司机，锚点硬停。"""
+
+    dry_run: bool = False
+    max_steps: int = 10
+    engine: str = "fake"
+    by: str
+
+
 class ChatOpenRequest(BaseModel):
-    """开一条引擎会话：engine（claude|openhands|fake）+ 司机署名。"""
+    """开一条引擎会话：engine（claude|openhands|fake）+ 司机署名 + WBS 工作包锚定。"""
 
     engine: str = "claude"
     by: str
+    wbs_package: str | None = None
 
 
 class ChatSendRequest(BaseModel):
@@ -108,6 +119,7 @@ class ChatSendRequest(BaseModel):
     engine: str | None = None
     message: str
     by: str
+    wbs_package: str | None = None
 
 
 def create_app(
@@ -376,6 +388,26 @@ def create_app(
         """十大知识域词表 + 各过程组子过程（线路图/文件归属共用）。"""
         return domains_payload()
 
+    @app.get("/api/wbs")
+    def api_wbs() -> dict:
+        """WBS 工作包（.tram/wbs.yaml，PM 规划工件）——会话锚定用。"""
+        try:
+            return {"packages": ctx.load_wbs()}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/autopilot")
+    def api_autopilot(req: AutopilotRequest, request: Request) -> dict:
+        """自动驾驶：锚点之间自动推进，锚点处硬停（决策表，无 LLM 判定）。"""
+        _require_write(request)
+        if not req.by.strip():
+            raise HTTPException(422, "自动驾驶要署名：by 不能为空")
+        from tram.autopilot import Autopilot
+
+        return Autopilot(
+            ctx, engine=req.engine, dry_run=req.dry_run, max_steps=req.max_steps, by=req.by
+        ).run()
+
     @app.get("/api/file")
     def api_file(path: str) -> dict:
         try:
@@ -411,7 +443,7 @@ def create_app(
         if not req.by.strip():
             raise HTTPException(422, "开会话要署名：by 不能为空")
         try:
-            return chat.open_session(req.engine, req.by)
+            return chat.open_session(req.engine, req.by, wbs_package=req.wbs_package)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -462,7 +494,9 @@ def create_app(
         if not req.by.strip():
             raise HTTPException(422, "发消息要署名：by 不能为空")
         try:
-            session, job = chat.send_message(req.session, req.message, req.by, engine=req.engine)
+            session, job = chat.send_message(
+                req.session, req.message, req.by, engine=req.engine, wbs_package=req.wbs_package
+            )
         except ValueError as exc:
             status = 404 if "unknown session" in str(exc) else 400
             raise HTTPException(status, str(exc)) from exc

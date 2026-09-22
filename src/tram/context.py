@@ -6,6 +6,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from tram.config import TramConfig
 from tram.cr_store import ScopeBaseline
 from tram.evidence.git_client import GitClient
@@ -68,6 +70,32 @@ class TramContext:
     @property
     def baseline_file(self) -> Path:
         return self.tram_dir / "scope-baseline.yaml"
+
+    @property
+    def wbs_file(self) -> Path:
+        return self.tram_dir / "wbs.yaml"
+
+    def load_wbs(self) -> list[dict]:
+        """WBS 工作包（规划工件，PM 手写）：[{id, title, area?, paths: [glob]}].
+
+        空文件/缺文件 = 自由模式（无锚定校验，并线时提示）。schema 坏了
+        直接抛错——规划工件不能静默降级。
+        """
+        if not self.wbs_file.exists():
+            return []
+        doc = yaml.safe_load(self.wbs_file.read_text(encoding="utf-8")) or {}
+        packages = doc.get("packages") or []
+        if not isinstance(packages, list):
+            raise ValueError("wbs.yaml: 'packages' 必须是列表")
+        seen: set[str] = set()
+        for pkg in packages:
+            pid = pkg.get("id")
+            if not pid or pid in seen:
+                raise ValueError(f"wbs.yaml: 工作包 id 缺失或重复（{pid}）")
+            seen.add(pid)
+            if not pkg.get("paths"):
+                raise ValueError(f"wbs.yaml: 工作包 {pid} 缺 paths（交付物路径 glob）")
+        return packages
 
     @property
     def packaged_policies(self) -> Path:

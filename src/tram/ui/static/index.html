@@ -40,6 +40,7 @@
           </p>
           <div class="dispatch-strip">
             <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
+            <button class="dispatch-btn" id="autopilot-run" title="自动驾驶：锚点之间自动推进，锚点处硬停（决策表，无 LLM 判定）">🤖 自动驾驶</button>
             <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
             <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
             <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
@@ -123,6 +124,7 @@
           <option value="openhands">openhands</option>
           <option value="fake">fake（离线测试）</option>
         </select>
+        <select id="chat-package" class="chat-select" title="锚定的 WBS 工作包（.tram/wbs.yaml）——项目定义了工作包时，会话产出须对得上号才能并线"></select>
         <select id="chat-sessions" class="chat-select"></select>
         <button class="dispatch-btn" id="chat-new">➕ 新会话</button>
         <button class="dispatch-btn dispatch-btn--ghost" id="chat-close">🏁 收车</button>

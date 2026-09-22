@@ -127,6 +127,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第十九批：会话并线）**：补上「沙箱产出 → 主线」的最后一公里。`ChatService.merge_session`：分支变更集（merge-base..branch）先过 Intent Guard——越界照章立案 CR（source=tram.chat.merge，站台审批放行/扩基线后重试即过）；主工作区**已跟踪**文件有未提交改动则拒绝（未跟踪不算：.tram/ 账本、init 写的 .gitignore 是治理层自己的落盘，碰撞由 git 兜底）；`git merge --no-ff` 入主线（TRAM_IDENTITY 落款），冲突即 `--abort` 并报「请手动解决」；成功记 `SESSION_MERGED` 事件 + 合并提交挂任务 commit_refs，进 REFRESH_KINDS 全舱刷新。API `POST /api/chat/sessions/{sid}/merge`（三道闸 + 署名；ValueError→404/400、MergeRefused→409）；UI 会话栏「🔀 并线」按钮（confirm → 结果三种呈现：并线成功/越界立案/无产出）。
 
+**已完成（第二十批：WBS 锚定 + 跨会话重叠预警 + 自动驾驶）**：三项落地。(1) **WBS 锚定**：`.tram/wbs.yaml` 工作包（PM 规划工件，{id,title,paths}，schema 坏了报错不静默降级）；会话开/发消息可带 `wbs_package`（UI 会话栏下拉），任务落锚点字段；并线时锚定校验——项目定义了工作包而会话未锚定 → 拒（unanchored），产出越出工作包交付范围 → 拒（anchor_mismatch + outside 清单）；无工作包定义 = 自由模式放行（结果标 anchor: free），渐进收紧不砸存量。(2) **跨会话重叠预警**：并线结果带 `overlaps`——其他在途会话分支也改了相同路径（提示不拦截，UI 红字提醒冲突风险）。(3) **自动驾驶**（`tram/autopilot.py`，JEV 讨论后定型为决策表哑司机——无 LLM 判定）：`route_reasons` 确定性路由（awaiting human/open CR → 锚点硬停；missing artifacts/charter → 自动开票；failed checks → 孵整改会话修 G2 红灯→并线自产会话→重试）；四锚点永不自动（基线批准/CR 裁决/release 放行/升级待人审）；护栏 = 干跑（探门留痕零动作）+ 急停文件 `.tram/autopilot-stop` + 步数预算（默认 10）；每个动作 `AUTOPILOT_STEP` 事件（source=tram.autopilot）。CLI `tram autopilot [--dry-run --max-steps --engine]`；API `POST /api/autopilot`（三道闸+署名）；UI 调度条 🤖 按钮（confirm 提示四锚点与急停方法）。
+
 **后续批次（UI 全功能化路线）**：
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 

@@ -353,6 +353,58 @@ def test_merge_api_roundtrip_and_gates(git_repo):
     assert client.post("/api/chat/sessions/chat-9999/merge", json={"by": "lay"}).status_code == 403
 
 
+def test_wbs_anchor_and_overlap_warnings(git_repo):
+    """WBS 锚定：产出对得上工作包才放行并线；自由模式降级；跨会话重叠预警。"""
+    svc, ctx = _service(git_repo, {"src/auth/login.py": "x = 1\n"})
+    # 定义工作包：WP-001 管登录
+    (git_repo / ".tram" / "wbs.yaml").write_text(
+        'packages:\n  - id: WP-001\n    title: 登录模块\n    paths: ["src/auth/**"]\n',
+        encoding="utf-8",
+    )
+
+    # 未锚定的会话 → 拒绝并线
+    free, _j = svc.send_message(None, "自由发挥", by="lay")
+    refused = svc.merge_session(free["id"], by="lay")
+    assert refused["merged"] is False and refused["reason"] == "unanchored"
+
+    # 锚定但产出越出工作包 → 拒绝
+    svc2 = ChatService(load_context(git_repo), inline=True)
+    svc2._engine = lambda name: FakeRunner(
+        {"src/auth/login.py": "x=1\n", "src/billing/pay.py": "y=2\n"}
+    )  # noqa: SLF001
+    wide, _j2 = svc2.send_message(None, "顺手改了计费", by="lay", wbs_package="WP-001")
+    mismatch = svc2.merge_session(wide["id"], by="lay")
+    assert mismatch["merged"] is False and mismatch["reason"] == "anchor_mismatch"
+    assert mismatch["outside"] == ["src/billing/pay.py"]
+
+    # 锚定且对得上 → 放行，且与未并线的 free 会话重叠时给出预警
+    svc3 = ChatService(load_context(git_repo), inline=True)
+    svc3._engine = lambda name: FakeRunner({"src/auth/login.py": "ok\n"})  # noqa: SLF001
+    ok_session, _j3 = svc3.send_message(None, "修登录", by="lay", wbs_package="WP-001")
+    merged = svc3.merge_session(ok_session["id"], by="lay")
+    assert merged["merged"] is True
+    assert merged["anchor"] == "WP-001"
+    overlap_paths = {o["path"] for o in merged["overlaps"]}
+    assert "src/auth/login.py" in overlap_paths  # free 会话的分支也改了它
+
+    # 删掉工作包定义 → 自由模式回归放行
+    (git_repo / ".tram" / "wbs.yaml").unlink()
+    svc4 = ChatService(load_context(git_repo), inline=True)
+    svc4._engine = lambda name: FakeRunner({"src/anywhere.py": "z=3\n"})  # noqa: SLF001
+    free2, _j4 = svc4.send_message(None, "自由模式", by="lay")
+    result = svc4.merge_session(free2["id"], by="lay")
+    assert result["merged"] is True and result["anchor"] == "free"
+
+
+def test_open_session_rejects_unknown_package(git_repo):
+    svc, _ctx = _service(git_repo, {})
+    (git_repo / ".tram" / "wbs.yaml").write_text(
+        'packages:\n  - id: WP-001\n    title: t\n    paths: ["src/**"]\n', encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="unknown wbs package"):
+        svc.open_session("fake", "lay", wbs_package="WP-404")
+
+
 def test_close_dirty_session_keeps_worktree(git_repo):
     svc, _ctx = _service(git_repo, {"vendor/pyproject.toml": "a=1\n"})
     session, _job = svc.send_message(None, "越界", by="lay")
