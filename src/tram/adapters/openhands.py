@@ -16,14 +16,19 @@ claude 适配器同一套事件词汇（assistant / result / error），下游
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import threading
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
-from tram.adapters.base import RunnerUnavailableError, RunResult, fold_stream
+from tram.adapters.base import (
+    RunnerUnavailableError,
+    RunResult,
+    fold_stream,
+    resolve_binary,
+    spawn_env,
+)
 from tram.models.task import TaskSpec
 
 
@@ -48,10 +53,18 @@ class OpenHandsRunner:
 
     def stream(self, task: TaskSpec, workspace: Path) -> Iterator[dict[str, Any]]:
         """跑引擎，OpenHands JSONL 逐事件翻译成统一词汇后 yield。"""
+        binary = resolve_binary(self.binary)
+        if binary is None:
+            raise RunnerUnavailableError(
+                f"'{self.binary}' CLI not found——PATH 与常见安装位"
+                "（~/.local/bin、/opt/homebrew/bin、/usr/local/bin）都没有；"
+                "pip install openhands 后重试，或换个引擎"
+            )
         argv = self.build_cmd(task)
+        argv[0] = binary
         # 压掉 banner / 遥测：stdout 是 JSONL 轨道，人类可读噪音越少越好
         env = {
-            **os.environ,
+            **spawn_env(),
             "OPENHANDS_SUPPRESS_BANNER": "1",
             "OPENHANDS_DISABLE_ANALYTICS": "1",
         }

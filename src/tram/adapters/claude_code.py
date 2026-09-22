@@ -14,7 +14,13 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
-from tram.adapters.base import RunnerUnavailableError, RunResult, fold_stream
+from tram.adapters.base import (
+    RunnerUnavailableError,
+    RunResult,
+    fold_stream,
+    resolve_binary,
+    spawn_env,
+)
 from tram.models.task import TaskSpec
 
 
@@ -55,7 +61,15 @@ class ClaudeCodeRunner:
 
     def stream(self, task: TaskSpec, workspace: Path) -> Iterator[dict[str, Any]]:
         """跑引擎并逐事件 yield（会话车厢的流式轨道）。"""
+        binary = resolve_binary(self.binary)
+        if binary is None:
+            raise RunnerUnavailableError(
+                f"'{self.binary}' CLI not found——PATH 与常见安装位"
+                "（~/.local/bin、~/.claude/local、/opt/homebrew/bin、/usr/local/bin）"
+                "都没有；安装 Claude Code 后重试，或换个引擎"
+            )
         argv = self.build_cmd(task)
+        argv[0] = binary  # build_cmd 保留裸名给 docker 沙箱翻译，spawn 时才落绝对路径
         try:
             proc = subprocess.Popen(
                 argv,
@@ -64,10 +78,11 @@ class ClaudeCodeRunner:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                env=spawn_env(),
             )
         except FileNotFoundError as exc:
             raise RunnerUnavailableError(
-                f"'{self.binary}' CLI not found; install Claude Code or use --runner fake"
+                f"'{binary}' CLI not found; install Claude Code or use another engine"
             ) from exc
         assert proc.stdout is not None and proc.stderr is not None
 

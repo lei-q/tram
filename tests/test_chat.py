@@ -6,12 +6,13 @@ worktree/引擎会话句柄/Guard 收尾/收车语义；API 层验证写模式�
 """
 
 import json
+import stat
 import subprocess
 
 import pytest
 from fastapi.testclient import TestClient
 
-from tram.adapters.base import RunResult
+from tram.adapters.base import RunnerUnavailableError, RunResult
 from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
 from tram.chat import ChatService
@@ -27,7 +28,30 @@ def _initialized(ctx):
     """create_app / ChatService 需要 .tram/ 已初始化（与 test_ui_api 同约定）。"""
 
 
-# ---------- 适配器：会话旗标 ----------
+# ---------- 适配器：会话旗标与二进制定位 ----------
+
+
+def test_resolve_binary_falls_back_to_common_dirs(tmp_path, monkeypatch):
+    """IDE/桌面进程 PATH 缺 ~/.local/bin 时，仍要能从常见安装位找到引擎。"""
+    from tram.adapters import base
+
+    fake = tmp_path / "claude"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr(base.shutil, "which", lambda name: None)
+    monkeypatch.setattr(base, "COMMON_BIN_DIRS", (tmp_path,))
+
+    assert base.resolve_binary("claude") == str(fake)
+    assert base.resolve_binary("nope") is None
+
+
+def test_claude_unavailable_lists_searched_paths(tmp_path):
+    with pytest.raises(RunnerUnavailableError, match="not found"):
+        list(
+            ClaudeCodeRunner(binary="/nonexistent/claude").stream(
+                TaskSpec(id="T-1", prompt="p"), tmp_path
+            )
+        )
 
 
 def test_claude_build_cmd_session_flags():

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Protocol
@@ -13,6 +15,36 @@ from tram.models.task import TaskSpec
 
 class RunnerUnavailableError(RuntimeError):
     pass
+
+
+# IDE / 桌面环境启动的进程不带 shell profile 的 PATH 追加（nvm、~/.local/bin…），
+# 引擎常常是装了的只是看不见——定位时多扫这几个常见安装位。
+COMMON_BIN_DIRS: tuple[Path, ...] = (
+    Path.home() / ".local" / "bin",  # claude 原生安装
+    Path.home() / ".claude" / "local",  # claude 旧式本地装
+    Path("/opt/homebrew/bin"),  # homebrew（Apple Silicon）/ npm -g
+    Path("/usr/local/bin"),  # homebrew（Intel）
+)
+
+
+def resolve_binary(name: str) -> str | None:
+    """PATH 上找不到时扫常见安装位；都没有才返回 None。"""
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in COMMON_BIN_DIRS:
+        p = d / name
+        if p.is_file() and os.access(p, os.X_OK):
+            return str(p)
+    return None
+
+
+def spawn_env() -> dict[str, str]:
+    """子进程 PATH 增补常见安装位（npm 系 CLI 的 node shebang 也靠它找 node）。"""
+    dirs = [str(d) for d in COMMON_BIN_DIRS if d.is_dir()]
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([*dirs, env.get("PATH", "")])
+    return env
 
 
 class RunResult(BaseModel):
