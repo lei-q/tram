@@ -48,7 +48,7 @@ integration/scope/schedule/cost/quality/communication/risk = full；resource/pro
 CLI (Typer) ─→ TramContext(repo/config/state/events/git)
                 ├─ governance/  checks(确定性) + policy_engine(OPA|fallback) + intent_guard + gate_runner
                 ├─ orchestration/  阶段推进纯函数（LangGraph 包装待接）
-                ├─ adapters/   AgentRunner 协议：fake ✅ / claude-code ✅（/openhands 预留）
+                ├─ adapters/   AgentRunner 协议：fake ✅ / claude-code ✅ / openhands ✅
                 ├─ sandbox/    WorktreeSession ✅ / DockerSandboxRunner ✅
                 ├─ evidence/   git_client + verifier
                 ├─ obs/        EventLog(JSONL) + otel(可选)
@@ -113,12 +113,12 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第十一批：会话车厢）**：UI 直接与代码生成引擎多轮对话，全程治理铁轨。适配器层：`TaskSpec` 增 `session_id`/`resume`——claude `--session-id`（新建）与 `--resume`（续聊），result 事件的 `session_id` 回收入库即句柄；`StreamingRunner` 协议 + 共享 `fold_stream`（assistant.tool_use→轨迹、result→终态），`stream()` 逐事件 yield、`run()` 消费同一事件流，流式与阻塞语义同源。服务层 `tram/chat.py`：会话 = TaskRecord + 常驻 worktree（`tram/chat-XXXX` 分支）+ 引擎句柄，注册表落 `.tram/chat/sessions.json`；每条消息一个 job（线程 + MAX_JOB_LINES 限幅），SSE `/api/chat/stream` 逐行推送、`after` 游标增量拉取；首条消息立任务（AGENT_RUN_STARTED source=tram.chat），每轮跑完过与 `tram agent run` 同一条 Intent Guard——轨内改动由 Tram 提交（commit_refs 留痕）、越界拦截 + 自动立案 procurement CR；收车语义：干净 worktree 移除、脏 worktree 永不销毁（未审工作），任务 DONE、返工/QA 另走闭环。UI 会话车厢：引擎选择（claude/fake）、会话列表、流式对话窗（text/tool/result/error 四种行）、收车按钮；写模式三道闸同款（令牌/署名/Origin）。API：`GET|POST /api/chat/sessions`、`POST /api/chat/send`、`POST /api/chat/sessions/{sid}/close`、`GET /api/chat/jobs/{id}`。
 
-**openhands 调研（第十一批记录，适配器第十三批落地）**：OpenHands 已演进为 Software Agent SDK（事件溯源 + 确定性回放，Action/Observation 事件流）+ Agent Canvas；CLI headless 模式以 `--task`/`--file` 驱动、`--json` 吐 JSONL 事件流，会话身份是 conversation id（可续）。落地路径：新 `OpenHandsRunner` 只需（a）build_cmd 映射 TaskSpec→`--task`+`--json`，（b）把其 JSONL 事件折叠进 `fold_stream`（新增 result 事件映射），（c）conversation id 对接 `session_id`/`resume`；备选走 ACP（其对 Claude Code 已有适配）。风险：SDK 迭代快、event schema 未冻结——先以 `--json` 的实际输出写契约测试再实现。
+**已完成（第十三批：openhands 适配器）**：`adapters/openhands.py` 落地 `OpenHandsRunner`，线格式拆 pypi 轮子核实（openhands 1.16 CLI + openhands-sdk 事件定义）：入口 `openhands`，headless 模式 `openhands --headless --json -t "<task>"`，stdout 逐行吐 SDK Event 的 `model_dump()`、每事件带 `kind`=类名（MessageEvent / ActionEvent / ObservationEvent / AgentErrorEvent / ConversationErrorEvent / ConversationStateUpdateEvent…）；会话句柄是 conversation id，从 `ConversationStateUpdateEvent(key="id")` 捡、续聊 `--resume <id>`（新建会话不能预置 id，与 claude 的 `--session-id` 不同）。适配器是纯翻译层：OpenHands 词汇 → 与 claude 同一套统一事件词汇（assistant/result/error），`fold_stream` 与会话车厢 `ui_line` 零改动；OpenHands 没有 result 事件——进程退出即终局，适配器合成统一 result（AgentError 工具级错误亮行不终局；ConversationError / 非零退出终局 error）。已接入会话车厢 ENGINES + UI 引擎下拉。契约测试用真实字段样例 + heredoc stub 二进制走真实 Popen 管道，不依赖引擎安装。顺带修正：chat 引擎 run 失败（status=error）不再走 Guard 收尾误报 ok，按 error 落账（AGENT_RUN_FINISHED error、不立案）。待真机验证：`--resume`+`-t` 的 seed 行为、ObservationEvent 的 UI 呈现——第十四批活体补记。
 
 **已完成（第十二批：动画精修）**：寓意动画全量补齐，全部只在状态真变化时放一次、全部尊重 `prefers-reduced-motion`。车票打孔：任务 → done 票面留检票圆孔（历史 done 常驻孔印、票面文字淡化），刚验票的放印章落孔动画；CR 支线岔道：新 CR 立案瞬间虚线支线向前流一段（stroke-dashoffset 行进）+ 绕行气泡弹性弹出；终点站庆祝：收尾站 + 任务全清时 Trammy 欢快摇摆、14 张站点色车票彩带徐徐落下（animationend 自清扫，一次到站只庆一次，离开收尾站自动复位）；检票孔/岔道/庆祝动画收尾统一走 animationend 摘类，与既有的到站颠簸、信号翻灯、按钮按压、行车记录仪逐行打印同一套节拍。
 
 **后续批次（UI 全功能化路线）**：
-- **第十三批 · openhands 适配器**：按上述调研落地 OpenHandsRunner + 契约测试。
+- **第十四批 · 活体验证**：本机装 openhands（`pip install openhands`，需 Python 3.12），会话车厢真机跑一轮，补 ObservationEvent 呈现与 `--resume`+`-t` seed 行为记录；claude 引擎活体跑通 SSE 全链路。
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 
 ## 9. 风险登记（项目自身）

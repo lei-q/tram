@@ -11,6 +11,7 @@ import subprocess
 import pytest
 from fastapi.testclient import TestClient
 
+from tram.adapters.base import RunResult
 from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
 from tram.chat import ChatService
@@ -140,6 +141,30 @@ def test_close_dirty_session_keeps_worktree(git_repo):
     closed = svc.close_session(session["id"])
     assert closed["status"] == "closed"
     assert closed["kept_worktree"] is True
+
+
+def test_engine_error_marks_job_error_not_guard(git_repo):
+    """引擎 run 失败 ≠ 治理结论：job error、AGENT_RUN_FINISHED(error)，不进 Guard 收尾。"""
+
+    class ErrorRunner:
+        name = "fake"
+
+        def run(self, task, workspace):  # 无 stream → _drive 走 run() 兜底
+            return RunResult(task_id=task.id, runner="fake", status="error", summary="boom")
+
+    svc, ctx = _service(git_repo, {})
+    svc._engine = lambda name: ErrorRunner()  # noqa: SLF001 - 测试换装
+    session, job = svc.send_message(None, "hi", by="lay")
+    assert job.status == "error" and "boom" in (job.error or "")
+
+    finished = [
+        e
+        for e in ctx.events.read()
+        if e.source == "tram.chat" and e.kind == EventKind.AGENT_RUN_FINISHED
+    ]
+    assert finished and finished[-1].data["status"] == "error"
+    kinds = [e.kind for e in ctx.events.read() if e.source == "tram.chat"]
+    assert EventKind.INTENT_BLOCKED not in kinds and EventKind.CR_CREATED not in kinds
 
 
 def test_unknown_session_and_closed_session_rejected(git_repo):

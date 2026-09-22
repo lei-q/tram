@@ -29,7 +29,7 @@ from tram.models.task import TaskRecord, TaskSpec, TaskStatus
 from tram.sandbox.worktree import WorktreeSession
 
 COMMIT_TRAILER = "Co-Authored-By: Claude Code <noreply@anthropic.com>"
-ENGINES = ("claude", "fake")
+ENGINES = ("claude", "openhands", "fake")
 MAX_JOB_LINES = 400
 
 
@@ -180,6 +180,10 @@ class ChatService:
             return FakeRunner()
         if name == "claude":
             return ClaudeCodeRunner()
+        if name == "openhands":
+            from tram.adapters.openhands import OpenHandsRunner
+
+            return OpenHandsRunner()
         raise ValueError(f"unknown engine '{name}' ({' | '.join(ENGINES)})")
 
     def _worktree(self, session: dict) -> WorktreeSession:
@@ -275,6 +279,23 @@ class ChatService:
                 self._update_session(
                     session_id, engine_session_id=result.session_id, updated_at=_now()
                 )
+
+            if result.status == "error":  # 引擎失败≠治理结论：按 error 落账，不进 Guard 收尾
+                job.status = "error"
+                job.error = result.summary[:300]
+                ctx.events.append(
+                    EventKind.AGENT_RUN_FINISHED,
+                    source="tram.chat",
+                    data={
+                        "task": task_id,
+                        "session": session_id,
+                        "status": "error",
+                        "detail": result.summary[:300],
+                    },
+                    refs={"task": task_id},
+                )
+                return
+
             self._finish(ctx, session_id, job, ws, result, by)
         except RunnerUnavailableError as exc:
             job.status = "error"
