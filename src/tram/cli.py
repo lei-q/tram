@@ -18,6 +18,7 @@ from tram import operations
 from tram.adapters.base import RunnerUnavailableError
 from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
+from tram.adapters.openhands import OpenHandsRunner
 from tram.context import ROLE_KINDS, TramContext, init_project, load_context
 from tram.cr_store import CRStore
 from tram.governance import approvals, pr_review
@@ -266,7 +267,7 @@ def guard_check(
 @agent_app.command("run")
 def agent_run(
     prompt: Annotated[str, typer.Option(help="task prompt for the agent")],
-    runner: Annotated[str, typer.Option(help="fake | claude")] = "fake",
+    runner: Annotated[str, typer.Option(help="fake | claude | openhands")] = "fake",
     fake_plan: Annotated[
         Path | None, typer.Option(help="JSON {path: content} the fake runner writes")
     ] = None,
@@ -306,8 +307,10 @@ def agent_run(
         engine = FakeRunner(writes)
     elif runner == "claude":
         engine = ClaudeCodeRunner()
+    elif runner == "openhands":
+        engine = OpenHandsRunner()
     else:
-        _fail(ValueError(f"unknown runner '{runner}' (fake | claude)"))
+        _fail(ValueError(f"unknown runner '{runner}' (fake | claude | openhands)"))
         return
     sandbox_mode = sandbox or ctx.config.sandbox.value
     if sandbox_mode == "docker":

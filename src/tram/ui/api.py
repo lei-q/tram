@@ -93,7 +93,7 @@ class FileSaveRequest(BaseModel):
 
 
 class ChatOpenRequest(BaseModel):
-    """开一条引擎会话：engine（claude|fake）+ 司机署名。"""
+    """开一条引擎会话：engine（claude|openhands|fake）+ 司机署名。"""
 
     engine: str = "claude"
     by: str
