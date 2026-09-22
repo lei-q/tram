@@ -553,7 +553,7 @@ async function callAction(verb, args = {}, btn = null) {
   }
 }
 
-document.querySelector(".dispatch-bar").addEventListener("click", (ev) => {
+document.querySelector(".dispatch-strip").addEventListener("click", (ev) => {
   const btn = ev.target.closest(".dispatch-btn");
   if (!btn || btn.id === "baseline-open") return;
   const verb = btn.dataset.verb;

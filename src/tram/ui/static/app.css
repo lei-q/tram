@@ -27,7 +27,7 @@ h2 {
 .shell {
   height: 100dvh;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto clamp(150px, 20vh, 215px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto clamp(140px, 18vh, 200px);
   gap: 8px;
   padding: 10px 12px 12px;
 }
@@ -70,7 +70,7 @@ h2 {
 .deck {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(170px, 33vh) minmax(200px, 1fr);
+  grid-template-rows: minmax(160px, 28vh) minmax(220px, 1fr);
   gap: 8px;
   min-height: 0;
   min-width: 0;
