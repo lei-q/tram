@@ -56,15 +56,25 @@ function buildMap() {
 
   // 信号灯（阶段门）
   for (const g of GATES) {
-    const group = el("g", { class: "signal", id: `signal-${g.id}` });
+    const group = el("g", { class: "signal", id: `signal-${g.id}`, "data-gate": g.id });
+    group.appendChild(
+      Object.assign(document.createElementNS(SVG_NS, "title"), {
+        textContent: `${g.label} 门禁 —— 点击重跑（gate.run）`,
+      })
+    );
     el("line", { class: "signal-stem", x1: g.x, y1: TRACK_Y - 20, x2: g.x, y2: TRACK_Y - 40 }, group);
     el("circle", { cx: g.x, cy: TRACK_Y - 50, r: 9 }, group);
     el("text", { class: "gate-label", x: g.x, y: TRACK_Y - 66 }, group).textContent = g.label;
     signalEls[g.id] = group;
   }
 
-  // Trammy 小电车（外层管位移，内层管颠簸动画）
+  // Trammy 小电车（外层管位移，内层管颠簸动画）——点电车 = 全线运行
   tramEl = el("g", { class: "tram", id: "tram" });
+  tramEl.appendChild(
+    Object.assign(document.createElementNS(SVG_NS, "title"), {
+      textContent: "点 Trammy 全线运行（flow.run）——绿灯推进、红灯必停",
+    })
+  );
   const tramInner = el("g", { class: "tram-inner" }, tramEl);
   const tram = (n, a) => el(n, a, tramInner);
   tram("rect", { class: "tram-body", x: -48, y: -46, width: 96, height: 40, rx: 13 });
@@ -93,6 +103,16 @@ function buildMap() {
     const bubble = document.getElementById("branch-bubble");
     if (ev.target === bubble) bubble.classList.remove("bubble--pop");
   });
+
+  // 线路图即调度台：点信号灯过门、点电车全线运行
+  svg.addEventListener("click", (ev) => {
+    const signal = ev.target.closest(".signal");
+    if (signal) {
+      callAction("gate.run", { gate: signal.dataset.gate });
+      return;
+    }
+    if (ev.target.closest(".tram")) callAction("flow.run", {});
+  });
 }
 
 function moveTram(phase) {
@@ -102,8 +122,8 @@ function moveTram(phase) {
 
 /* 十大知识域子过程轨道：每站下面挂自己过程组的子过程（裁剪版），徽记单字 */
 function buildDomainRail(data) {
-  const SUB_Y = 226; // 子过程列起点（站台标签之下）
-  const LINE_H = 14;
+  const SUB_Y = 230; // 子过程列起点（站台标签之下留出呼吸空间）
+  const LINE_H = 17;
   const sub = data.subprocesses || {};
   for (const s of PHASES) {
     const procs = sub[s.id] || [];
@@ -111,32 +131,32 @@ function buildDomainRail(data) {
     el("line", {
       class: "sub-stem",
       x1: s.x,
-      y1: TRACK_Y + 26,
+      y1: TRACK_Y + 28,
       x2: s.x,
-      y2: SUB_Y - 8,
+      y2: SUB_Y - 10,
     });
     procs.forEach((p, i) => {
       const y = SUB_Y + i * LINE_H;
       const g = el("g", { class: "sub-proc" });
-      el("rect", { class: "sub-badge", x: s.x - 58, y: y - 10, width: 15, height: 13, rx: 4.5 }, g);
+      el("rect", { class: "sub-badge", x: s.x - 64, y: y - 11, width: 17, height: 15, rx: 5 }, g);
       el(
         "text",
-        { class: "sub-badge-text", x: s.x - 50.5, y: y, "text-anchor": "middle" },
+        { class: "sub-badge-text", x: s.x - 55.5, y: y, "text-anchor": "middle" },
         g
       ).textContent = p.badge;
-      el("text", { class: "sub-label", x: s.x - 47, y: y }, g).textContent = p.process;
+      el("text", { class: "sub-label", x: s.x - 51, y: y }, g).textContent = p.process;
     });
   }
   // 图例：十大知识域一行扫全
   const areas = data.areas || [];
-  const legendY = SUB_Y + Math.max(...Object.values(sub).map((a) => a.length), 1) * LINE_H + 14;
+  const legendY = SUB_Y + Math.max(...Object.values(sub).map((a) => a.length), 1) * LINE_H + 20;
   areas.forEach((a, i) => {
     const g = el("g", { class: "ka-legend-item" });
-    const x = 70 + i * ((920 - 120) / Math.max(areas.length - 1, 1));
-    el("rect", { class: "ka-legend-badge", x: x - 7, y: legendY - 9, width: 15, height: 13, rx: 4 }, g);
+    const x = 66 + i * ((920 - 110) / Math.max(areas.length - 1, 1));
+    el("rect", { class: "ka-legend-badge", x: x - 8, y: legendY - 10, width: 17, height: 15, rx: 5 }, g);
     el("text", { class: "ka-legend-badge-text", x, y: legendY + 1, "text-anchor": "middle" }, g).textContent =
       a.badge;
-    el("text", { class: "ka-legend-name", x: x + 12, y: legendY + 1 }, g).textContent = a.name;
+    el("text", { class: "ka-legend-name", x: x + 14, y: legendY + 1 }, g).textContent = a.name;
   });
 }
 
@@ -493,6 +513,16 @@ function narrate(verb, body) {
 async function callAction(verb, args = {}, btn = null) {
   if (!uiConfig.approvals_enabled) {
     toast("只读模式 —— `tram ui --approve` 解锁调度台", true);
+    return;
+  }
+  if (!driverName()) {
+    // 开车前先亮司机证：调度动作都要署名落款，空署名后端只会 422
+    const box = document.querySelector(".driver-box");
+    box.classList.remove("is-missing");
+    void box.offsetWidth;
+    box.classList.add("is-missing");
+    document.getElementById("driver-name").focus();
+    toast("先在顶栏填司机署名 ✍️（写操作都要落款）", true);
     return;
   }
   if (btn) {
@@ -907,6 +937,64 @@ function chatLog() {
   return document.getElementById("chat-log");
 }
 
+/* 聊天历史：服务器端 .tram/chat/<sid>/log.jsonl 持久化，刷新页面据此还原 */
+async function loadChatLog(sid) {
+  const log = chatLog();
+  log.innerHTML = "";
+  if (!sid) {
+    log.innerHTML = '<div class="chat-hint">开新会话后发第一条消息：立任务 + 建常驻 worktree，之后每条消息跑完即过 Guard</div>';
+    return;
+  }
+  try {
+    const body = await fetch(`/api/chat/sessions/${encodeURIComponent(sid)}/log`).then((r) => {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+    if (!body.lines.length) {
+      log.innerHTML = '<div class="chat-hint">这个会话还没有说过话</div>';
+      return;
+    }
+    for (const line of body.lines) appendChatLine(line);
+  } catch (err) {
+    log.innerHTML = '<div class="chat-hint">历史加载失败，发条新消息继续</div>';
+  }
+}
+
+document.getElementById("chat-sessions").addEventListener("change", (ev) => {
+  chatSessionId = ev.target.value || null;
+  loadChatLog(chatSessionId);
+});
+
+document.getElementById("chat-clear-log").addEventListener("click", async () => {
+  const sid = document.getElementById("chat-sessions").value;
+  if (!sid) {
+    toast("先选一条会话", true);
+    return;
+  }
+  if (!window.confirm(`清空 ${sid} 的聊天历史？服务器端一并删除，不可恢复。`)) return;
+  const by = driverName();
+  if (!by) {
+    toast("清空历史要署名 ✍️（顶栏司机署名）", true);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sid)}/log`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({ by }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.detail || "清空失败", true);
+      return;
+    }
+    loadChatLog(sid);
+    toast("聊天历史已清空 🧹");
+  } catch (err) {
+    toast("清空异常：" + err, true);
+  }
+});
+
 function appendChatLine(line) {
   const log = chatLog();
   const hint = log.querySelector(".chat-hint");
@@ -1089,7 +1177,7 @@ document.getElementById("chat-close").addEventListener("click", async () => {
   }
 });
 
-refreshChatSessions();
+refreshChatSessions().then(() => loadChatLog(chatSessionId)); // 刷新页面还原会话历史
 
 /* ---------- 行车 KPI ---------- */
 

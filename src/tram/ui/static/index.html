@@ -29,11 +29,23 @@
     <div id="kpis" class="kpis"></div>
   </div>
 
-  <!-- 主甲板：左风挡 + 主驾（会话），右轨（调度/审批/行车记录） -->
+  <!-- 主甲板：上风挡兼调度台（点节点开车），下主驾席会话车厢（全宽全高） -->
   <div class="deck">
     <section class="card pane pane--map">
-      <h2>线路图 · 风挡（五过程组主线 · 十大知识域子过程 · 信号门禁）</h2>
-      <svg id="route-map" viewBox="0 36 920 288" role="img" aria-label="项目治理线路图"></svg>
+      <div class="map-head">
+        <h2>线路图 · 风挡兼调度台（点 G0–G3 信号灯过门 · 点电车全线运行）</h2>
+        <p id="console-help" class="console-help" hidden>
+          当前只读 —— <code>tram ui --approve</code> 解锁调度台与站台审批
+        </p>
+        <div class="dispatch-strip">
+          <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
+          <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
+          <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
+          <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
+          <button class="dispatch-btn" id="baseline-open">📝 基线</button>
+        </div>
+      </div>
+      <svg id="route-map" viewBox="0 30 920 336" role="img" aria-label="项目治理线路图（可点击调度）"></svg>
     </section>
 
     <section class="card pane pane--chat">
@@ -47,6 +59,7 @@
         <select id="chat-sessions" class="chat-select"></select>
         <button class="dispatch-btn" id="chat-new">➕ 新会话</button>
         <button class="dispatch-btn dispatch-btn--ghost" id="chat-close">🏁 收车</button>
+        <button class="dispatch-btn dispatch-btn--ghost" id="chat-clear-log" title="清空本会话的聊天历史（服务器端一并清除）">🧹 清空</button>
       </div>
       <div id="chat-log" class="chat-log">
         <div class="chat-hint">开新会话后发第一条消息：立任务 + 建常驻 worktree，之后每条消息跑完即过 Guard</div>
@@ -56,45 +69,16 @@
         <button class="dispatch-btn dispatch-btn--main" id="chat-send">发送</button>
       </div>
     </section>
-
-    <aside class="rail">
-      <section class="card rail-card rail-card--dispatch">
-        <h2>调度台 · 亲手开车（每个按钮都长在铁轨上）</h2>
-        <p id="console-help" class="console-help" hidden>
-          当前只读 —— <code>tram ui --approve</code> 解锁调度台与站台审批
-        </p>
-        <div class="dispatch-bar">
-          <button class="dispatch-btn dispatch-btn--main" data-verb="flow.run">▶ 全线运行</button>
-          <button class="dispatch-btn" data-verb="gate.run" data-gate="g0_charter_gate">G0</button>
-          <button class="dispatch-btn" data-verb="gate.run" data-gate="g1_planning_gate">G1</button>
-          <button class="dispatch-btn" data-verb="gate.run" data-gate="g2_quality_gate">G2</button>
-          <button class="dispatch-btn" data-verb="gate.run" data-gate="g3_closing_gate">G3</button>
-          <button class="dispatch-btn" data-verb="guard.check">🛡 Guard</button>
-          <button class="dispatch-btn" data-verb="artifact.generate" data-all="1">🎫 开票</button>
-          <button class="dispatch-btn" data-verb="evm.snapshot">📊 EVM</button>
-          <button class="dispatch-btn" id="baseline-open">📝 基线</button>
-        </div>
-      </section>
-
-      <section class="card rail-card rail-card--platform">
-        <h2>站台审批 · 等人的事<span id="platform-badge" class="rail-badge" hidden></span></h2>
-        <ul id="platform" class="platform"></ul>
-      </section>
-
-      <section class="card rail-card rail-card--console">
-        <h2>行车记录仪</h2>
-        <div id="console" class="console" aria-live="polite"></div>
-      </section>
-    </aside>
   </div>
 
   <!-- 底舱：次要面板 tab 化，一屏内切换不滚屏 -->
   <nav class="dock-tabs" role="tablist" aria-label="底舱面板">
     <button class="dock-tab is-active" data-pane="dock-files" role="tab">📁 文件车厢</button>
     <button class="dock-tab" data-pane="dock-tasks" role="tab">📋 任务板</button>
+    <button class="dock-tab" data-pane="dock-platform" role="tab">🚏 站台审批<span id="platform-badge" class="tab-badge" hidden></span></button>
     <button class="dock-tab" data-pane="dock-arts" role="tab">🎫 车票 · 绕行</button>
     <button class="dock-tab" data-pane="dock-weather" role="tab">🌤 风险气象</button>
-    <button class="dock-tab" data-pane="dock-events" role="tab">📜 调度日志</button>
+    <button class="dock-tab" data-pane="dock-events" role="tab">📜 行车记录</button>
   </nav>
   <div class="dock">
     <section class="card dock-pane is-active" id="dock-files" role="tabpanel">
@@ -139,8 +123,15 @@
       <div id="weather" class="weather"></div>
     </section>
 
+    <section class="card dock-pane" id="dock-platform" role="tabpanel" hidden>
+      <h2>站台审批 · 等人的事都在这（署名即进事件流）</h2>
+      <ul id="platform" class="platform platform--dock"></ul>
+    </section>
+
     <section class="card dock-pane" id="dock-events" role="tabpanel" hidden>
-      <h2>调度日志 · 事件黑匣子</h2>
+      <h2>行车记录仪 · 事件黑匣子</h2>
+      <div id="console" class="console console--dock" aria-live="polite"></div>
+      <h2 class="dock-sub">事件流</h2>
       <ul id="events" class="events"></ul>
     </section>
   </div>

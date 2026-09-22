@@ -27,7 +27,7 @@ h2 {
 .shell {
   height: 100dvh;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto clamp(170px, 24vh, 250px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto clamp(150px, 20vh, 215px);
   gap: 8px;
   padding: 10px 12px 12px;
 }
@@ -45,6 +45,10 @@ h2 {
   white-space: nowrap;
 }
 #driver-name { min-width: 150px; }
+.driver-box.is-missing { animation: driver-pulse 1s ease 2; }
+@keyframes driver-pulse {
+  50% { transform: scale(1.05); color: var(--fail); }
+}
 
 /* 仪态条：仪表 + KPI 一行横排（驾驶舱顶部的告示灯带） */
 .strip {
@@ -62,38 +66,30 @@ h2 {
   flex: none;
 }
 
-/* 主甲板：左列（风挡 + 主驾会话），右轨（调度/审批/行车记录） */
+/* 主甲板：上风挡兼调度台（全宽），下主驾席会话车厢（全宽全高，剩余空间都给它） */
 .deck {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(300px, 27vw, 400px);
-  grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(170px, 33vh) minmax(200px, 1fr);
   gap: 8px;
   min-height: 0;
   min-width: 0;
 }
 .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.pane--map { grid-column: 1; grid-row: 1; }
 .pane--map #route-map { flex: 1; min-height: 0; width: 100%; }
-.pane--chat { grid-column: 1; grid-row: 2; }
 
-.rail {
-  grid-column: 2;
-  grid-row: 1 / 3;
+/* 风挡头：标题 + 调度按钮条同行（调度能力长在线路图上） */
+.map-head {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
 }
-.rail-card { padding: 10px 14px; }
-.rail-card--platform,
-.rail-card--console {
-  flex: 1 1 0;
-  min-height: 84px;
-  display: flex;
-  flex-direction: column;
-}
-.rail-badge {
+.map-head h2 { margin: 0; flex: 1; min-width: 200px; }
+.dispatch-strip { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.tab-badge {
   display: inline-block;
   margin-left: 6px;
   padding: 0 8px;
@@ -102,6 +98,8 @@ h2 {
   color: var(--ink);
   font-size: 11px;
 }
+.platform--dock { max-height: none; }
+.console--dock { max-height: 34%; margin-bottom: 10px; }
 
 /* 底舱：tab 化的次要面板 */
 .dock-tabs { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
@@ -400,17 +398,10 @@ h2 {
 .events .kind { font-weight: 700; }
 .events .refs { color: var(--ink-soft); margin-left: auto; text-align: right; }
 
-/* ---- 调度台（右轨：按钮排成仪表阵） ---- */
-.console-help { margin: 0 0 8px; color: var(--ink-soft); font-size: 12px; }
+/* ---- 调度台（长在线路图风挡头上） ---- */
+.console-help { margin: 0; color: var(--ink-soft); font-size: 12px; }
 .console-help code { background: var(--paper); border-radius: 6px; padding: 1px 7px; }
-.rail-card--dispatch .dispatch-bar {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-.rail-card--dispatch .dispatch-bar .dispatch-btn--main { grid-column: 1 / -1; }
-.dispatch-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.rail-card--dispatch .dispatch-btn { padding: 4px 6px; font-size: 12.5px; }
+.dispatch-strip .dispatch-btn { padding: 3px 12px; font-size: 12.5px; }
 #driver-name {
   border: 2px solid var(--line);
   border-radius: 999px;
@@ -757,10 +748,7 @@ h2 {
   .shell { height: auto; grid-template-rows: none; }
   .strip { overflow-x: visible; flex-wrap: wrap; }
   .deck { grid-template-columns: 1fr; grid-template-rows: none; }
-  .pane--map, .pane--chat { grid-column: 1; grid-row: auto; }
   .pane--map #route-map { min-height: 200px; }
-  .rail { grid-column: 1; grid-row: auto; }
-  .rail-card--platform .platform, .rail-card--console .console { max-height: 260px; }
   .dock-tabs { overflow-x: visible; flex-wrap: wrap; }
   .dock { height: 380px; }
   .dock-pane { height: 100%; }
@@ -778,14 +766,14 @@ h2 {
 .sub-stem { stroke: var(--track); stroke-width: 2.5; stroke-dasharray: 3 4; }
 .sub-proc .sub-badge { fill: color-mix(in srgb, var(--st-exec) 45%, var(--card)); stroke: none; }
 .sub-proc .sub-badge-text {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
   fill: var(--ink);
 }
-.sub-proc .sub-label { font-size: 11px; fill: var(--ink-soft); }
+.sub-proc .sub-label { font-size: 12.5px; fill: var(--ink-soft); }
 .ka-legend-badge { fill: color-mix(in srgb, var(--pending) 32%, var(--card)); stroke: none; }
-.ka-legend-badge-text { font-size: 9px; font-weight: 800; fill: var(--ink); }
-.ka-legend-name { font-size: 10.5px; fill: var(--ink-soft); }
+.ka-legend-badge-text { font-size: 10px; font-weight: 800; fill: var(--ink); }
+.ka-legend-name { font-size: 11.5px; fill: var(--ink-soft); }
 
 /* ---- 文件车厢 · 知识域徽章与分组视图 ---- */
 .files-toolbar { display: flex; align-items: center; gap: 12px; }
@@ -850,5 +838,7 @@ h2 {
   color: var(--ink);
 }
 
-/* 知识域轨道加高后，风挡与主驾席对半分 */
-.deck { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+/* 第十七批：可点击调度的风挡（信号灯/电车带指针与悬停光晕） */
+.signal, .tram { cursor: pointer; }
+.signal:hover circle { stroke: var(--ink); stroke-width: 2.5; }
+.tram:hover .tram-body { stroke-width: 4.5; }

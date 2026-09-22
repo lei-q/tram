@@ -218,6 +218,57 @@ def test_message_prompt_carries_governance_preamble(git_repo):
         assert p in prompt
 
 
+def test_chat_history_persists_until_manually_cleared(git_repo):
+    """聊天历史落盘 .tram/chat/<sid>/log.jsonl：刷新不丢，只有手动清空才删。"""
+    svc, _ctx = _service(git_repo, {"src/a.py": "x = 1\n"})
+    session, _job = svc.send_message(None, "第一条", by="lay")
+    svc.send_message(session["id"], "第二条", by="lay")
+
+    lines = svc.read_log(session["id"])
+    ks = [ln["k"] for ln in lines]
+    assert ks.count("me") == 2
+    assert any(k in ks for k in ("text", "result", "tool"))
+    assert all("ts" in ln for ln in lines)
+
+    assert svc.clear_log(session["id"]) is True
+    assert svc.read_log(session["id"]) == []
+    assert svc.clear_log(session["id"]) is False  # 再清是幂等的 no-op
+
+
+def test_chat_log_api_roundtrip(git_repo):
+    app = create_app(git_repo, allow_approvals=True, inline_jobs=True)
+    token = TestClient(app).get("/api/ui-config").json()["token"]
+    client = TestClient(app)
+    sent = client.post(
+        "/api/chat/send",
+        json={"engine": "fake", "message": "hello", "by": "lay"},
+        headers={"X-Tram-Token": token},
+    ).json()
+    sid = sent["session"]["id"]
+
+    got = client.get(f"/api/chat/sessions/{sid}/log").json()
+    assert [ln["k"] for ln in got["lines"]][0] == "me"
+    assert client.get("/api/chat/sessions/chat-9999/log").status_code == 404
+
+    assert (
+        client.request(
+            "DELETE",
+            f"/api/chat/sessions/{sid}/log",
+            json={"by": " "},
+            headers={"X-Tram-Token": token},
+        ).status_code
+        == 422
+    )  # 清空要署名（令牌先过三道闸）
+    cleared = client.request(
+        "DELETE",
+        f"/api/chat/sessions/{sid}/log",
+        json={"by": "lay"},
+        headers={"X-Tram-Token": token},
+    ).json()
+    assert cleared["cleared"] is True
+    assert client.get(f"/api/chat/sessions/{sid}/log").json()["lines"] == []
+
+
 def test_close_dirty_session_keeps_worktree(git_repo):
     svc, _ctx = _service(git_repo, {"vendor/pyproject.toml": "a=1\n"})
     session, _job = svc.send_message(None, "越界", by="lay")

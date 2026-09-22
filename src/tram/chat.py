@@ -94,6 +94,38 @@ class ChatService:
     def _sessions_file(self) -> Path:
         return self.ctx.repo / ".tram" / "chat" / "sessions.json"
 
+    # ---------- 聊天历史（.tram/chat/<sid>/log.jsonl，刷新页面不丢） ----------
+
+    def _log_file(self, session_id: str) -> Path:
+        return self.ctx.repo / ".tram" / "chat" / session_id / "log.jsonl"
+
+    def append_log(self, session_id: str, entry: dict[str, Any]) -> None:
+        path = self._log_file(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({**entry, "ts": _now()}, ensure_ascii=False) + "\n")
+
+    def read_log(self, session_id: str) -> list[dict]:
+        path = self._log_file(session_id)
+        if not path.exists():
+            return []
+        lines = []
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            try:
+                obj = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                lines.append(obj)
+        return lines
+
+    def clear_log(self, session_id: str) -> bool:
+        path = self._log_file(session_id)
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
     def _load_sessions(self) -> list[dict]:
         path = self._sessions_file()
         if not path.exists():
@@ -222,6 +254,7 @@ class ChatService:
 
     def _run_message(self, session_id: str, job: ChatJob, message: str, by: str) -> None:
         ctx = load_context(self.ctx.repo)  # 线程内自己的 ctx，不与 UI 共享可变状态
+        self.append_log(session_id, {"k": "me", "text": message})
         try:
             session = self.get_session(session_id)
             assert session is not None
@@ -300,9 +333,11 @@ class ChatService:
         except RunnerUnavailableError as exc:
             job.status = "error"
             job.error = str(exc)
+            self.append_log(session_id, {"k": "error", "text": str(exc)})
         except Exception as exc:  # noqa: BLE001
             job.status = "error"
             job.error = f"{type(exc).__name__}: {exc}"
+            self.append_log(session_id, {"k": "error", "text": job.error or ""})
 
     def _preamble(self, ctx: TramContext, session: dict, task_id: str) -> str:
         """治理上下文前导——引擎必须知道自己跑在 Tram 的铁轨上.
@@ -351,11 +386,14 @@ class ChatService:
 
     def _tap(self, job: ChatJob, events):
         for ev in events:
-            lines = ui_line(ev)
-            if lines:
+            got = ui_line(ev)
+            if got:
+                lines = got if isinstance(got, list) else [got]  # ui_line 返回 list 或单 dict
                 with self._lock:
                     if len(job.lines) < MAX_JOB_LINES:
                         job.lines.extend(lines)
+                for line in lines:  # 聊天历史同步落盘（刷新不丢）
+                    self.append_log(job.session_id, line)
             yield ev
 
     def _finish(

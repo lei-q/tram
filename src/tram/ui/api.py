@@ -423,6 +423,23 @@ def create_app(
             status = 404 if "unknown" in str(exc) else 400
             raise HTTPException(status, str(exc)) from exc
 
+    @app.get("/api/chat/sessions/{sid}/log")
+    def api_chat_log(sid: str) -> dict:
+        """聊天历史（刷新页面后据此还原会话车厢）。"""
+        if chat.get_session(sid) is None:
+            raise HTTPException(404, f"unknown session: {sid}")
+        return {"session": sid, "lines": chat.read_log(sid)}
+
+    @app.delete("/api/chat/sessions/{sid}/log")
+    def api_chat_log_clear(sid: str, req: ChatOpenRequest, request: Request) -> dict:
+        """手动清空聊天历史（唯一的清除途径——历史默认永远保留）。"""
+        _require_write(request)
+        if chat.get_session(sid) is None:
+            raise HTTPException(404, f"unknown session: {sid}")
+        if not req.by.strip():
+            raise HTTPException(422, "清空历史要署名：by 不能为空")
+        return {"session": sid, "cleared": chat.clear_log(sid)}
+
     @app.post("/api/chat/send")
     def api_chat_send(req: ChatSendRequest, request: Request) -> dict:
         """发一条消息：引擎在常驻 worktree 里跑，Guard 铁轨收尾（见 tram.chat）。"""
