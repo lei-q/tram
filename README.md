@@ -8,7 +8,7 @@
 - **度量即仪表**：任务点数驱动 EVM（SPI/CPI），阈值越界自动入风险册；MTTR / 返工率从事件黑匣子确定性计算。
 - **黑匣子**：append-only JSONL 事件日志 + OpenTelemetry，任何偏差可回放。
 
-详细实施计划与决策记录见 [docs/PLAN.md](docs/PLAN.md)。
+详细实施计划与决策记录见 [docs/PLAN.md](docs/PLAN.md)；完整功能用法见 [docs/MANUAL.md](docs/MANUAL.md)（产品操作手册）。
 
 ## 安装
 

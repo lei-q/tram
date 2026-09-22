@@ -14,3 +14,4 @@ htmlcov/
 .tram/
 .idea/
 .DS_Store
+examples/
