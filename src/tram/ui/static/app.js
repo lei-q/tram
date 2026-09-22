@@ -23,7 +23,10 @@ PHASE_X.done = 870;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const svg = document.getElementById("route-map");
 let tramEl;
+let branchEl;
 const signalEls = {};
+
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function el(name, attrs = {}, parent = svg) {
   const node = document.createElementNS(SVG_NS, name);
@@ -34,7 +37,7 @@ function el(name, attrs = {}, parent = svg) {
 
 function buildMap() {
   // 支线（CR 绕行道岔）
-  el("path", {
+  branchEl = el("path", {
     class: "branch",
     d: `M ${PHASE_X.executing} ${TRACK_Y} C 560 60, 640 60, ${PHASE_X.monitoring} ${TRACK_Y}`,
     id: "branch",
@@ -78,10 +81,17 @@ function buildMap() {
   moveTram("initiating");
 
   // 动画收尾：一次性动画结束后摘掉类，方便下次重放
-  tramEl.addEventListener("animationend", () => tramEl.classList.remove("is-depart"));
+  tramEl.addEventListener("animationend", () => tramEl.classList.remove("is-depart", "is-cheer"));
   svg.addEventListener("animationend", (ev) => {
     const g = ev.target.closest(".signal");
-    if (g) g.classList.remove("signal--blip");
+    if (g) {
+      g.classList.remove("signal--blip");
+      return;
+    }
+    if (ev.target.classList && ev.target.classList.contains("confetti")) ev.target.remove();
+    if (ev.target === branchEl) branchEl.classList.remove("branch--flow");
+    const bubble = document.getElementById("branch-bubble");
+    if (ev.target === bubble) bubble.classList.remove("bubble--pop");
   });
 }
 
@@ -111,6 +121,9 @@ function phaseLabel(id) {
 // 变更检测：只在状态真的变了时放一次动画（寓意：到站颠一下、信号翻灯闪一下）
 let prevPhase = null;
 const prevGateStatus = {};
+const prevTaskStatus = {};
+let prevCrCount = null;
+let celebrated = false;
 
 function renderState(state) {
   document.getElementById("project-name").textContent = `Tram · ${state.project_name}`;
@@ -148,10 +161,25 @@ function renderState(state) {
 
   const bubble = document.getElementById("branch-bubble");
   const branchLabel = document.getElementById("branch-label");
-  branchLabel.textContent = state.open_crs.length
-    ? `${state.open_crs.length} 条 CR 绕行中`
-    : "";
-  bubble.setAttribute("r", state.open_crs.length ? 14 : 0);
+  const crCount = state.open_crs.length;
+  branchLabel.textContent = crCount ? `${crCount} 条 CR 绕行中` : "";
+  bubble.setAttribute("r", crCount ? 14 : 0);
+  // 岔道扳过去：新增 CR 的瞬间，虚线支线流一下、气泡弹一下（车走支线的意象）
+  if (prevCrCount !== null && crCount > prevCrCount && !reducedMotion()) {
+    branchEl.classList.remove("branch--flow");
+    bubble.classList.remove("bubble--pop");
+    void branchEl.getBoundingClientRect();
+    branchEl.classList.add("branch--flow");
+    bubble.classList.add("bubble--pop");
+  }
+  prevCrCount = crCount;
+
+  // 终点站庆祝：收尾站 + 任务全清，Trammy 欢快一颠、车票彩带落一场（一次）
+  const tk = state.tasks;
+  const tasksDone = tk && tk.total > 0 && tk.done === tk.total;
+  const celebrating = state.phase === "closing" && tasksDone;
+  if (celebrating && !celebrated) celebrate();
+  celebrated = celebrating;
 
   const gauges = document.getElementById("gauges");
   const t = state.tasks;
@@ -309,6 +337,27 @@ async function submitApproval(form, decision) {
     if (res.ok) { form.hidden = true; form.reset(); refresh(); }
   } catch (err) {
     toast("审批请求失败：" + err, true);
+  }
+}
+
+/* 终点站庆祝：Trammy 欢快一颠 + 车票彩带落一场（一次性动画，结束自动清扫） */
+function celebrate() {
+  tramEl.classList.remove("is-depart", "is-cheer");
+  void tramEl.getBoundingClientRect();
+  tramEl.classList.add("is-depart", "is-cheer");
+  if (reducedMotion()) return;
+  const palette = PHASES.map((p) => p.css);
+  for (let i = 0; i < 14; i++) {
+    el("rect", {
+      class: "confetti",
+      x: Math.round(60 + Math.random() * 800),
+      y: Math.round(20 + Math.random() * 36),
+      width: 16,
+      height: 9,
+      rx: 2,
+      fill: palette[i % palette.length],
+      style: `animation-delay:${(Math.random() * 0.6).toFixed(2)}s`,
+    });
   }
 }
 
@@ -520,13 +569,21 @@ function renderTasks(tasks) {
   const writable = Boolean(uiConfig.approvals_enabled);
   for (const t of tasks) {
     const li = document.createElement("li");
-    li.className = "task-row" + (t.rework_of ? " task-row--rework" : "");
+    // 车票打孔：任务这趟车验完票（→ done）就在票面上打个孔；刚打孔的放印章动画
+    const prev = prevTaskStatus[t.id];
+    const justPunched = prev !== undefined && prev !== t.status && t.status === "done";
+    li.className =
+      "task-row" +
+      (t.rework_of ? " task-row--rework" : "") +
+      (t.status === "done" ? " is-punched" : "") +
+      (justPunched ? " is-just-punched" : "");
     li.innerHTML = `
       <span class="task-id">${esc(t.id)}</span>
       <span class="task-title">${esc(t.title)}${
         t.rework_of ? ` <small>↩ 返工自 ${esc(t.rework_of)}</small>` : ""
       }</span>
       <span class="chip ${taskChipCls(t.status)}">${esc(t.status)}</span>
+      ${t.status === "done" ? '<span class="punch" title="QA 已验票"></span>' : ""}
       <span class="task-points">
         <label>est <input type="number" step="0.5" min="0" value="${t.est}" data-task="${esc(
           t.id
@@ -546,6 +603,7 @@ function renderTasks(tasks) {
     `;
     list.appendChild(li);
   }
+  for (const t of tasks) prevTaskStatus[t.id] = t.status;
 }
 
 document.getElementById("task-list").addEventListener("change", (ev) => {

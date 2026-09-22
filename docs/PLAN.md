@@ -115,9 +115,10 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **openhands 调研（第十一批记录，适配器第十三批落地）**：OpenHands 已演进为 Software Agent SDK（事件溯源 + 确定性回放，Action/Observation 事件流）+ Agent Canvas；CLI headless 模式以 `--task`/`--file` 驱动、`--json` 吐 JSONL 事件流，会话身份是 conversation id（可续）。落地路径：新 `OpenHandsRunner` 只需（a）build_cmd 映射 TaskSpec→`--task`+`--json`，（b）把其 JSONL 事件折叠进 `fold_stream`（新增 result 事件映射），（c）conversation id 对接 `session_id`/`resume`；备选走 ACP（其对 Claude Code 已有适配）。风险：SDK 迭代快、event schema 未冻结——先以 `--json` 的实际输出写契约测试再实现。
 
+**已完成（第十二批：动画精修）**：寓意动画全量补齐，全部只在状态真变化时放一次、全部尊重 `prefers-reduced-motion`。车票打孔：任务 → done 票面留检票圆孔（历史 done 常驻孔印、票面文字淡化），刚验票的放印章落孔动画；CR 支线岔道：新 CR 立案瞬间虚线支线向前流一段（stroke-dashoffset 行进）+ 绕行气泡弹性弹出；终点站庆祝：收尾站 + 任务全清时 Trammy 欢快摇摆、14 张站点色车票彩带徐徐落下（animationend 自清扫，一次到站只庆一次，离开收尾站自动复位）；检票孔/岔道/庆祝动画收尾统一走 animationend 摘类，与既有的到站颠簸、信号翻灯、按钮按压、行车记录仪逐行打印同一套节拍。
+
 **后续批次（UI 全功能化路线）**：
 - **第十三批 · openhands 适配器**：按上述调研落地 OpenHandsRunner + 契约测试。
-- **第十二批 · 动画精修**：车票打孔、CR 支线岔道、终点站庆祝等隐喻动画全量打磨。
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 
 ## 9. 风险登记（项目自身）

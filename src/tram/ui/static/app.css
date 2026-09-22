@@ -531,3 +531,76 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   padding: 6px 16px;
 }
 #chat-input:focus { outline: none; border-color: var(--pending); }
+
+/* ---- 第十二批 · 动画精修：车票打孔 / CR 岔道 / 终点站庆祝 ---- */
+
+/* 车票打孔：done 的任务票面上留一个检票圆孔，刚打孔时印章落一下 */
+.task-row { position: relative; }
+.task-row.is-punched .task-id,
+.task-row.is-punched .task-title { opacity: 0.62; }
+.punch {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  margin-top: -7px;
+  border: 3px dotted color-mix(in srgb, var(--ink) 40%, transparent);
+  border-radius: 50%;
+  opacity: 0.8;
+}
+.task-row.is-just-punched .punch { animation: punch-stamp 0.45s ease; }
+
+@keyframes punch-stamp {
+  0% { transform: scale(2.6); opacity: 0; }
+  55% { transform: scale(0.85); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* CR 岔道：新 CR 立案瞬间，虚线支线向前流一段、绕行气泡弹一下 */
+.branch--flow { animation: branch-march 0.9s linear; }
+
+@keyframes branch-march {
+  to { stroke-dashoffset: -64; }
+}
+
+.bubble--pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bubble-pop 0.5s ease;
+}
+
+@keyframes bubble-pop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+/* 终点站庆祝：Trammy 欢快摇摆 + 车票彩带徐徐落下 */
+.tram.is-cheer .tram-inner { animation: cheer 0.8s ease; }
+
+@keyframes cheer {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-4deg) translateY(-6px); }
+  50% { transform: rotate(3deg); }
+  75% { transform: rotate(-2deg) translateY(-4px); }
+}
+
+.confetti {
+  animation: confetti-fall 1.7s ease-in forwards;
+  opacity: 0;
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+  12% { opacity: 0.95; }
+  100% { transform: translateY(180px) rotate(240deg); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-row.is-just-punched .punch,
+  .branch--flow,
+  .bubble--pop,
+  .tram.is-cheer .tram-inner { animation: none; }
+  .confetti { display: none; }
+}
