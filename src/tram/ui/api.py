@@ -28,6 +28,7 @@ from tram.chat import ChatService
 from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance import approvals
+from tram.governance.domains import domains_payload
 from tram.governance.gate_runner import load_gate_specs
 from tram.metrics.evm import evaluate_thresholds, latest_snapshot
 from tram.metrics.kpis import MTTRReport, defect_mttr, escape_report, mttr_report, rework_report
@@ -362,11 +363,17 @@ def create_app(
     # ---------- 文件车厢：列/读开放（只读默认即安全），写走 Guard ----------
 
     @app.get("/api/files")
-    def api_files(path: str = "") -> dict:
+    def api_files(path: str = "", flat: int = 0) -> dict:
         try:
-            return {"dir": path, "entries": operations.file_list(ctx, path)}
+            entries = operations.file_flat(ctx) if flat else operations.file_list(ctx, path)
+            return {"dir": path, "entries": entries}
         except ValueError as exc:  # 越界 / 非目录
             raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/api/domains")
+    def api_domains() -> dict:
+        """十大知识域词表 + 各过程组子过程（线路图/文件归属共用）。"""
+        return domains_payload()
 
     @app.get("/api/file")
     def api_file(path: str) -> dict:

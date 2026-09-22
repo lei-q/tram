@@ -256,7 +256,7 @@ class ChatService:
 
             spec = TaskSpec(
                 id=task_id,
-                prompt=message,
+                prompt=self._preamble(ctx, session, task_id) + f"\n\n[用户消息]\n{message}",
                 session_id=session.get("engine_session_id"),
                 resume=bool(session.get("engine_session_id")),
             )
@@ -303,6 +303,41 @@ class ChatService:
         except Exception as exc:  # noqa: BLE001
             job.status = "error"
             job.error = f"{type(exc).__name__}: {exc}"
+
+    def _preamble(self, ctx: TramContext, session: dict, task_id: str) -> str:
+        """治理上下文前导——引擎必须知道自己跑在 Tram 的铁轨上.
+
+        纯确定性拼接（阶段/基线/工作流词表），LLM 不进判定路径；
+        没有这份上下文，引擎就是辆不知道路权的野车。
+        """
+        state = ctx.load_state()
+        baseline = ctx.load_baseline()
+        group_labels = {
+            "initiating": "启动",
+            "planning": "规划",
+            "executing": "执行",
+            "monitoring": "监控",
+            "closing": "收尾",
+        }
+        phase_label = group_labels.get(str(state.phase), str(state.phase))
+        return "\n".join(
+            [
+                "[Tram 治理上下文] 你是运行在 Tram（AI coding agent 治理层）管辖下的编码引擎。",
+                f"- 项目 {state.project_name} · 会话 {session['id']} · 任务 {task_id} ·"
+                f" 当前过程组：{phase_label}（{state.phase}）",
+                f"- 工作区是 worktree 沙箱，分支 {session.get('branch')}；主线受保护。",
+                "- 工作流：五过程组（启动/规划/执行/监控/收尾）× 十大知识域"
+                "（整合/范围/进度/成本/质量/资源/沟通/风险/采购/相关方），G0–G3 门禁放行。",
+                "- 阶段流转与门禁裁决由 Tram 掌管（司机在 UI 调度台或 CLI 操作），"
+                "你不能自改项目阶段；需要时提醒司机去操作。",
+                f"- 基线轨内（允许改）：{', '.join(baseline.allowed_paths) or '（基线为空）'}",
+                f"- 基线明令禁止：{', '.join(baseline.forbidden_paths) or '（无）'}",
+                "- 越界写入会被 Intent Guard 拦截并自动立案 CR（依赖清单越界属采购域）；"
+                "轨内改动由 Tram 自动提交留痕。改文件前先确认路径在轨内。",
+                f"- 当前在途任务 {len(state.tasks)} 项、未决 CR {len(state.open_crs)} 项。",
+                "回答时结合上述治理状态；用户说「回到某阶段」指的是 Tram 过程组。",
+            ]
+        )
 
     def _drive(self, engine, spec: TaskSpec, workspace: Path, job: ChatJob) -> RunResult:
         """流式优先：逐事件喂给 job.lines；无 stream 的 runner 走 run() 兜底。"""

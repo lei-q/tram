@@ -179,6 +179,35 @@ def test_chat_on_repo_without_commits_bootstraps_worktree(tmp_path):
     assert "bootstrap" in head
 
 
+def test_message_prompt_carries_governance_preamble(git_repo):
+    """引擎收到的 prompt 带治理上下文——不知道自己在 Tram 铁轨上就谈不上被治理."""
+
+    class Recorder:
+        name = "fake"
+
+        def __init__(self):
+            self.prompts = []
+
+        def run(self, task, workspace):
+            self.prompts.append(task.prompt)
+            return RunResult(task_id=task.id, runner="fake", status="ok", summary="done")
+
+    rec = Recorder()
+    svc, _ctx = _service(git_repo, {})
+    svc._engine = lambda name: rec  # noqa: SLF001 - 测试换装
+    svc.send_message(None, "回到启动阶段", by="lay")
+
+    prompt = rec.prompts[0]
+    assert prompt.startswith("[Tram 治理上下文]")
+    assert "五过程组" in prompt and "十大知识域" in prompt
+    assert "G0–G3" in prompt
+    assert "[用户消息]\n回到启动阶段" in prompt  # 用户消息原样殿后
+    # 基线路径进上下文（引擎据此判断轨内轨外）
+    baseline_allowed = load_context(git_repo).load_baseline().allowed_paths
+    for p in baseline_allowed:
+        assert p in prompt
+
+
 def test_close_dirty_session_keeps_worktree(git_repo):
     svc, _ctx = _service(git_repo, {"vendor/pyproject.toml": "a=1\n"})
     session, _job = svc.send_message(None, "越界", by="lay")

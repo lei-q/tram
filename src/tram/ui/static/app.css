@@ -773,3 +773,82 @@ h2 {
 #dock-files, #dock-events { display: flex; flex-direction: column; }
 #dock-files .files { flex: 1; height: auto; }
 #dock-events .events { flex: 1; height: auto; }
+
+/* ---- 第十六批 · 十大知识域：线路图子过程轨道 ---- */
+.sub-stem { stroke: var(--track); stroke-width: 2.5; stroke-dasharray: 3 4; }
+.sub-proc .sub-badge { fill: color-mix(in srgb, var(--st-exec) 45%, var(--card)); stroke: none; }
+.sub-proc .sub-badge-text {
+  font-size: 9px;
+  font-weight: 800;
+  fill: var(--ink);
+}
+.sub-proc .sub-label { font-size: 11px; fill: var(--ink-soft); }
+.ka-legend-badge { fill: color-mix(in srgb, var(--pending) 32%, var(--card)); stroke: none; }
+.ka-legend-badge-text { font-size: 9px; font-weight: 800; fill: var(--ink); }
+.ka-legend-name { font-size: 10.5px; fill: var(--ink-soft); }
+
+/* ---- 文件车厢 · 知识域徽章与分组视图 ---- */
+.files-toolbar { display: flex; align-items: center; gap: 12px; }
+.files-toolbar h2 { flex: 1; min-width: 0; }
+.seg { display: flex; gap: 4px; flex: none; }
+.seg-btn {
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-soft);
+  font: inherit;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 2px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg-btn.is-active { color: var(--ink); border-color: color-mix(in srgb, var(--pending) 55%, var(--line)); }
+.ka-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--st-exec) 45%, var(--card));
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 800;
+  cursor: help;
+}
+.ka-badge--lg { width: 24px; height: 24px; font-size: 13px; border-radius: 7px; }
+.files-domain { height: 100%; min-height: 0; overflow-y: auto; display: grid; gap: 8px; align-content: start; }
+#dock-files:has(.files-domain:not([hidden])) { display: block; }
+.ka-group {
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 8px 12px;
+}
+.ka-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.ka-group-head strong { font-size: 13px; }
+.ka-count { color: var(--ink-soft); font-size: 11.5px; }
+.ka-files { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 2px 14px; }
+.ka-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  font-size: 12.5px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.ka-file:hover { background: color-mix(in srgb, var(--pending) 14%, var(--paper)); }
+.ka-file code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* 知识域轨道加高后，风挡与主驾席对半分 */
+.deck { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }

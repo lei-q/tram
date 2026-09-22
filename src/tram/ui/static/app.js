@@ -100,6 +100,46 @@ function moveTram(phase) {
   tramEl.setAttribute("transform", `translate(${x} ${TRACK_Y})`);
 }
 
+/* 十大知识域子过程轨道：每站下面挂自己过程组的子过程（裁剪版），徽记单字 */
+function buildDomainRail(data) {
+  const SUB_Y = 226; // 子过程列起点（站台标签之下）
+  const LINE_H = 14;
+  const sub = data.subprocesses || {};
+  for (const s of PHASES) {
+    const procs = sub[s.id] || [];
+    // 站台 → 子过程列的挂线
+    el("line", {
+      class: "sub-stem",
+      x1: s.x,
+      y1: TRACK_Y + 26,
+      x2: s.x,
+      y2: SUB_Y - 8,
+    });
+    procs.forEach((p, i) => {
+      const y = SUB_Y + i * LINE_H;
+      const g = el("g", { class: "sub-proc" });
+      el("rect", { class: "sub-badge", x: s.x - 58, y: y - 10, width: 15, height: 13, rx: 4.5 }, g);
+      el(
+        "text",
+        { class: "sub-badge-text", x: s.x - 50.5, y: y, "text-anchor": "middle" },
+        g
+      ).textContent = p.badge;
+      el("text", { class: "sub-label", x: s.x - 47, y: y }, g).textContent = p.process;
+    });
+  }
+  // 图例：十大知识域一行扫全
+  const areas = data.areas || [];
+  const legendY = SUB_Y + Math.max(...Object.values(sub).map((a) => a.length), 1) * LINE_H + 14;
+  areas.forEach((a, i) => {
+    const g = el("g", { class: "ka-legend-item" });
+    const x = 70 + i * ((920 - 120) / Math.max(areas.length - 1, 1));
+    el("rect", { class: "ka-legend-badge", x: x - 7, y: legendY - 9, width: 15, height: 13, rx: 4 }, g);
+    el("text", { class: "ka-legend-badge-text", x, y: legendY + 1, "text-anchor": "middle" }, g).textContent =
+      a.badge;
+    el("text", { class: "ka-legend-name", x: x + 12, y: legendY + 1 }, g).textContent = a.name;
+  });
+}
+
 function setSignal(gateId, status) {
   const node = signalEls[gateId];
   if (!node) return;
@@ -691,15 +731,85 @@ function renderFiles(entries) {
     const icon = e.type === "dir" ? "📁" : "📄";
     const dot = e.changed ? '<span class="file-dot" title="有未提交改动">●</span>' : "";
     const size = e.type === "file" ? `<span class="file-size">${fmtSize(e.size)}</span>` : "";
+    const badge = domainBadge(e.domain);
     li.innerHTML = `<span class="file-icon">${icon}</span><span class="file-name">${esc(
       e.name
-    )}${dot}</span>${size}`;
+    )}${dot}</span>${badge}${size}`;
     li.addEventListener("click", () => (e.type === "dir" ? openDir(e.path) : openFile(e.path)));
     list.appendChild(li);
   }
   if (entries.length === 0 && !fileDir) {
     list.innerHTML = '<li class="empty">仓库根是空的</li>';
   }
+}
+
+/* 文件的知识域徽章：单字胶囊，悬停看全称（过程组 · 知识域 · 子过程） */
+function domainBadge(domain) {
+  if (!domain) return "";
+  const tip = esc(`${domain.group}组 · ${domain.area}管理 · ${domain.process}`);
+  return `<span class="ka-badge" title="${tip}">${esc(domain.badge)}</span>`;
+}
+
+/* ---------- 按知识域分组视图：文件答得出「属于哪个过程组·知识域·子过程」 ---------- */
+
+async function loadDomainView() {
+  const wrap = document.getElementById("files-domain-view");
+  try {
+    const body = await fetch("/api/files?flat=1").then((r) => {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+    const groups = new Map(); // key: badge|process|group|area -> {meta, files}
+    for (const e of body.entries) {
+      const d = e.domain;
+      const key = `${d.badge}|${d.process}|${d.group}|${d.area}`;
+      if (!groups.has(key)) groups.set(key, { meta: d, files: [] });
+      groups.get(key).files.push(e);
+    }
+    const sections = [...groups.values()].sort(
+      (a, b) => a.meta.group.localeCompare(b.meta.group, "zh") || a.meta.area.localeCompare(b.meta.area, "zh")
+    );
+    wrap.innerHTML = "";
+    for (const g of sections) {
+      const sec = document.createElement("div");
+      sec.className = "ka-group";
+      sec.innerHTML = `
+        <div class="ka-group-head">
+          <span class="ka-badge ka-badge--lg">${esc(g.meta.badge)}</span>
+          <strong>${esc(g.meta.area)}管理 · ${esc(g.meta.process)}</strong>
+          <span class="chip">${esc(g.meta.group)}组</span>
+          <span class="ka-count">${g.files.length} 个文件</span>
+        </div>
+        <ul class="ka-files"></ul>
+      `;
+      const ul = sec.querySelector(".ka-files");
+      for (const f of g.files) {
+        const li = document.createElement("li");
+        li.className = "ka-file";
+        const dot = f.changed ? '<span class="file-dot" title="有未提交改动">●</span>' : "";
+        li.innerHTML = `<code>${esc(f.path)}</code>${dot}<span class="file-size">${fmtSize(f.size)}</span>`;
+        li.addEventListener("click", () => openFile(f.path));
+        ul.appendChild(li);
+      }
+      wrap.appendChild(sec);
+    }
+    if (!sections.length) wrap.innerHTML = '<div class="empty">仓库里还没有文件</div>';
+  } catch (err) {
+    wrap.innerHTML = '<div class="empty">知识域视图加载失败</div>';
+    toast("知识域视图加载失败：" + err.message, true);
+  }
+}
+
+document.getElementById("file-view-dir").addEventListener("click", () => switchFileView("dir"));
+document.getElementById("file-view-domain").addEventListener("click", () => switchFileView("domain"));
+
+function switchFileView(mode) {
+  document.getElementById("file-view-dir").classList.toggle("is-active", mode === "dir");
+  document.getElementById("file-view-domain").classList.toggle("is-active", mode === "domain");
+  document.getElementById("files-dir-view").hidden = mode !== "dir";
+  document.getElementById("files-domain-view").hidden = mode !== "domain";
+  if (mode === "domain") loadDomainView();
+  else openDir(fileDir);
 }
 
 function fmtSize(n) {
@@ -1095,6 +1205,12 @@ document.querySelector(".dock-tabs").addEventListener("click", (ev) => {
 
 async function boot() {
   buildMap();
+  try {
+    // 十大知识域子过程轨道：词表来自服务层 /api/domains（与文件归属、会话前导同一份）
+    buildDomainRail(await fetch("/api/domains").then((r) => r.json()));
+  } catch (err) {
+    console.error("domains failed", err); // 词表拿不到也不挡地图主线
+  }
   try {
     Object.assign(uiConfig, await fetch("/api/ui-config").then((r) => r.json()));
   } catch (err) {

@@ -15,6 +15,7 @@ import yaml
 
 from tram.context import TramContext
 from tram.cr_store import CRStore
+from tram.governance.domains import classify_path
 from tram.governance.gate_runner import GateRunner
 from tram.governance.intent_guard import IntentGuard, classify_violations
 from tram.metrics.evm import (
@@ -236,7 +237,7 @@ def _safe_target(repo: Path, rel: str) -> Path:
 
 
 def file_list(ctx: TramContext, rel_dir: str = "") -> list[dict]:
-    """列目录（目录优先、.git 不展示），并标注 pending changes 的文件。"""
+    """列目录（目录优先、.git 不展示），并标注 pending changes 与知识域归属。"""
     root = _safe_target(ctx.repo, rel_dir or ".")
     if not root.is_dir():
         raise ValueError(f"not a directory: {rel_dir}")
@@ -255,7 +256,37 @@ def file_list(ctx: TramContext, rel_dir: str = "") -> list[dict]:
         }
         if entry.is_file():
             item["size"] = entry.stat().st_size
+            item["domain"] = classify_path(rel)
         items.append(item)
+    return items
+
+
+def file_flat(ctx: TramContext, limit: int = 2000) -> list[dict]:
+    """全仓平铺文件清单（按知识域分组的视图用）——只列文件，跳过 .git/.tram worktrees。"""
+    repo_root = ctx.repo.resolve()
+    changed = set(ctx.git.pending_changes())
+    items: list[dict] = []
+    for path in sorted(repo_root.rglob("*")):
+        if len(items) >= limit:
+            break
+        if not path.is_file() or path.is_symlink():
+            continue
+        rel = path.relative_to(repo_root).as_posix()
+        parts = rel.split("/")
+        if ".git" in parts:
+            continue
+        if parts[0] == ".tram" and len(parts) > 1 and parts[1] == "worktrees":
+            continue  # 会话车厢的常驻 worktree 不是项目文件
+        items.append(
+            {
+                "name": path.name,
+                "type": "file",
+                "path": rel,
+                "changed": rel in changed,
+                "size": path.stat().st_size,
+                "domain": classify_path(rel),
+            }
+        )
     return items
 
 
