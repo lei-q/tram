@@ -20,7 +20,7 @@ from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
 from tram.context import ROLE_KINDS, TramContext, init_project, load_context
 from tram.cr_store import CRStore
-from tram.governance import approvals
+from tram.governance import approvals, pr_review
 from tram.governance.gate_runner import GateRunner
 from tram.governance.intent_guard import IntentGuard
 from tram.metrics.evm import (
@@ -514,6 +514,39 @@ def cr_approve(
 ) -> None:
     """HITL: approve a change request (scope CRs update the baseline)."""
     _decide_cr(cr_id, "approved", by, note)
+
+
+@cr_app.command("link")
+def cr_link(
+    cr_id: Annotated[str, typer.Argument(help="e.g. cr-0001")],
+    pr: Annotated[int, typer.Option("--pr", help="PR number")],
+) -> None:
+    """Link a CR to a GitHub PR (repo resolved from origin remote)."""
+    try:
+        ctx = load_context()
+        ref = pr_review.link_pr(ctx, cr_id, pr)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print(f"[green]cr {cr_id} linked to {ref.repo}#{ref.number} ✅[/green]")
+
+
+@cr_app.command("sync")
+def cr_sync(
+    cr_id: Annotated[str, typer.Argument(help="e.g. cr-0001")],
+    note: Annotated[str, typer.Option(help="decision note")] = "",
+) -> None:
+    """HITL via PR review: apply the PR's review state to the CR (needs gh)."""
+    try:
+        ctx = load_context()
+        status, detail = pr_review.sync_cr(ctx, cr_id, note)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    if status is None:
+        console.print(f"[yellow]{detail}[/yellow]")
+    else:
+        console.print(f"[green]{detail} ✅[/green]")
 
 
 def _decide_cr(cr_id: str, decision: str, by: str, note: str) -> None:

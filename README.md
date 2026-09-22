@@ -40,6 +40,8 @@ tram evm snapshot              # 计算 SPI/CPI；越界自动登记风险（阈
 tram qa fail T-001 --note "复现步骤…"      # QA 复现失败 → 自动建返工任务（rework 链）
 tram agent run --task T-002 --role dev --runner claude --prompt "修复"  # 挂到返工任务，注入 dev 角色提示词
 tram qa pass T-002 --note "复现测试转绿"   # QA 验证通过 → 缺陷闭环
+tram cr link cr-0001 --pr 42   # CR 关联 GitHub PR（D5 PR review 流）
+tram cr sync cr-0001           # 按 PR review 裁决 CR（approved→并入基线）
 tram kpi                       # 门禁 MTTR + 缺陷 MTTR + 返工率仪表
 tram status                    # 项目状态一览
 tram replay --limit 20         # 回放事件黑匣子

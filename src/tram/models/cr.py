@@ -41,6 +41,13 @@ class Approval(BaseModel):
     note: str = ""
 
 
+class PRRef(BaseModel):
+    """D5 PR review 流：CR 裁决可接 GitHub PR review（approved/rejected）。"""
+
+    repo: str  # owner/name
+    number: int
+
+
 class ChangeRequest(BaseModel):
     id: str
     type: CRType
@@ -51,3 +58,4 @@ class ChangeRequest(BaseModel):
     trigger_event_seq: int | None = None
     reason: str = ""
     created_at: datetime | None = None
+    pr: PRRef | None = None

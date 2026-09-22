@@ -129,6 +129,7 @@ def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastA
                     "type": cr.type.value,
                     "status": cr.status.value,
                     "paths": cr.impact.changed_paths,
+                    "pr": cr.pr.number if cr.pr else None,
                 }
                 for cr in crs
             ],

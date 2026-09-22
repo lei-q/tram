@@ -188,7 +188,9 @@ function renderPlatform(state) {
     }
   }
   for (const cr of state.open_crs) {
-    items.push({ icon: "🔀", desc: `CR ${cr.id}（${cr.type}）绕行待审 · ${cr.paths.join(", ")}`, cmd: `tram cr approve|reject ${cr.id} --by <你>`, act: { action: "cr", id: cr.id, label: "裁决 CR" } });
+    const prTag = cr.pr ? ` · PR #${cr.pr}` : "";
+    const prCmd = cr.pr ? `（或 tram cr sync ${cr.id} 按 PR review 裁决）` : "";
+    items.push({ icon: "🔀", desc: `CR ${cr.id}（${cr.type}）绕行待审 · ${cr.paths.join(", ")}${prTag}`, cmd: `tram cr approve|reject ${cr.id} --by <你>${prCmd}`, act: { action: "cr", id: cr.id, label: "裁决 CR" } });
   }
   if (state.evm && state.evm.breaches && state.evm.breaches.length) {
     items.push({ icon: "🌧", desc: "EVM 越界已自动入险，需要纠偏决策", cmd: "tram evm show  # 看越界详情" });

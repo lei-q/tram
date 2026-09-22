@@ -23,7 +23,7 @@
 | D2 | 首个适配引擎 | 只做 Claude Code（headless CLI）；fake runner 用于离线测试/演示 |
 | D3 | 策略引擎 | OPA/Rego 为主 + 内置 Python fallback（语义一致，CI 跑双引擎对比测试） |
 | D4 | 沙箱 | **git worktree 为默认**；docker 为可选（共享环境强隔离） |
-| D5 | HITL 形态 | MVP 用 CLI + approval 记录；Phase 2 接 PR review 流 |
+| D5 | HITL 形态 | MVP 用 CLI + approval 记录；Phase 2 接 PR review 流 ✅（`tram cr link/sync`，review 状态确定性映射裁决） |
 | D6 | 节奏 | 垂直切片优先：先串通 guard→agent→CR→gate 最短闭环 |
 | D7 | UI 节奏 | (a) Phase 1 收尾即上**只读线路图薄版**（React+Vite+自绘 SVG）；完整 UI 在 Phase 2 |
 | D8 | 前端栈 | React + Vite + TypeScript，线路图自绘 SVG，设计 token 见 §7 |
@@ -100,6 +100,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 **已完成（第六批：UI 审批直连事件流）**：HITL 审批收敛为一条共享代码路径 `governance/approvals.py`（baseline / release / CR 裁决，CLI 与 UI 共用，入口 source 如实记录 `tram.cli.*` / `tram.ui`）；UI 默认仍只读，`tram ui --approve` 开启站台审批——站台上每条待人工事项出现署名表单（by 必填），放行写的是与 CLI 完全相同的事件流记录，不是绕过门禁的按钮；写模式带双 CSRF 防护（每会话令牌 + Origin 校验），共享环境不开启即保持只读。
 
 **D8 补充评估（React 版，2026-09）**：薄版 vanilla（无构建、零 Node 工具链、静态资源直接进 wheel、完全离线）在 UI 长到 6 视图（线路图 / 车票夹 / 仪表 / 气象台 / 站台 / 调度日志）后依然稳定，app.js 约 400 行尚未失控；React+Vite 的收益（组件化、TS 类型）要到「多页面 + 多人协作 + 状态更复杂」才会兑现，而成本（构建链、CI、打包）立刻发生。**结论：暂缓迁移**，保持 vanilla + tokens.css 单一视觉源；触发重评的阈值：app.js 超 ~800 行、或出现需要路由的多页需求、或 2+ 人同时改前端。
+
+**已完成（第七批：PR review 流，D5 落地）**：`tram cr link <id> --pr <N>`（repo 从 origin remote 解析，关联落 CR 文件）+ `tram cr sync <id>`——拉取 GitHub PR reviews，确定性映射为裁决（每人取最新一条；有 changes_requested 即驳回，否则有 approved 即批准；只有 commented 不算决定），裁决仍走 approvals 同一条写账路径，`source=tram.github.pr` 记录"裁决来自 PR review"、by 记 reviewer。gh 只是数据源，不进决策逻辑；UI 站台的 CR 行显示关联 PR 并提示 `cr sync`。
 
 ## 9. 风险登记（项目自身）
 
