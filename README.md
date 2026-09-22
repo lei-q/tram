@@ -48,7 +48,7 @@ tram kpi                       # 门禁 MTTR + 缺陷 MTTR + 返工率仪表
 tram status                    # 项目状态一览
 tram replay --limit 20         # 回放事件黑匣子
 tram ui                        # 只读线路图 UI（需 pip install 'tram[ui]'）
-tram ui --approve              # 写模式：调度台（门禁/Guard/工件/EVM/基线/任务 QA）+ 站台审批，全部与 CLI 同一条服务层与事件流
+tram ui --approve              # 写模式：调度台（门禁/Guard/工件/EVM/基线/任务 QA）+ 文件车厢 + 站台审批，全部与 CLI 同一条服务层与事件流
 ```
 
 接真实引擎：`tram agent run --runner claude --prompt "实现 X"`（需 `claude` CLI；默认在 git worktree 沙箱内执行）。共享环境可加 `--sandbox docker`：agent 命令进容器执行（镜像可配 `tram.yaml` 的 `docker_image`，需镜像内装好引擎 CLI），Intent Guard / 提交 / 事件流仍留在宿主机——容器管执行隔离，git 管变更隔离。

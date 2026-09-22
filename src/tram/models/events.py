@@ -26,6 +26,7 @@ class EventKind(enum.StrEnum):
     QA_FAILED = "qa_failed"
     QA_PASSED = "qa_passed"
     BASELINE_SAVED = "baseline_saved"
+    FILE_SAVED = "file_saved"
 
 
 class TramEvent(BaseModel):

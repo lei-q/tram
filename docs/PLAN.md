@@ -109,8 +109,9 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第九批：调度台，纲领落地第一步）**：共享服务层 `tram/operations.py`——CLI 动词与 UI 按钮派发同一组确定性服务（gate.run / flow.run / guard.check / task.points / qa.fail / qa.pass / artifact.generate / evm.snapshot / baseline.save），全部写 state + 事件流；UI 增调度台面板（`tram ui --approve` 解锁）：全线运行、G0–G3 单门重跑、Guard 检查、开票、EVM 快照、基线编辑器（schema 校验在服务层、批准仍走站台审批）、行车记录仪控制台（每个动作的结果逐行叙述）；任务板（点数直改 + QA ✓/✗ 闭环，返工链自动建档）；API `POST /api/action`（动词派发，与 /api/approve 共享写模式三道闸：开关/令牌/Origin）+ `GET /api/baseline`；`tram ui` 的 `--approve` 语义从"仅审批"升级为"写模式"（UI 能力对齐 CLI）。第一批寓意动画：到站颠簸（换相位 Trammy 弹跳）、信号翻灯（门禁状态变化灯球放大闪一下）、按钮按压反馈、行驶中按钮摇晃、flow.run 行车记录逐行打出，全部尊重 `prefers-reduced-motion`。
 
+**已完成（第十批：文件车厢）**：`/api/files`（列目录，目录优先、`.git` 不展示，标注 pending changes 的 ● ）+ `GET /api/file`（读文件：文本/二进制判定、512KB 截断、并返回该路径的基线归属——打开文件就亮「轨内 ✓ / 越界 ⚠」信号灯）+ `POST /api/file`（保存，写模式三道闸 + 署名必填）。服务层 `operations.file_list/file_read/file_save`：路径钉死在 repo 根内（拒绝对路径/`..`/越界 symlink）；`.tram/`（事件证据）与 `.git/`（历史）结构保护谁都不能写（`ProtectedPath`）；越界保存走与 `tram guard check` 同一条 `guard_check`——拦截内容不落盘 + INTENT_BLOCKED/CR_CREATED 自动立案（依赖清单越界同款 procurement 分类），扩基线（调度台基线编辑器）后重存即过——铁轨闭环。UI 文件车厢：面包屑目录树 + 编辑器 + 保存；`pending_changes` 解析改 `-uall`（untracked 逐文件列出，不再折叠成目录，Guard CLI 同款受益）。不自动 commit——提交仍是显式的治理动作。
+
 **后续批次（UI 全功能化路线）**：
-- **第十批 · 文件管理**：`/api/files` 列目录/读文件/存文件（限 repo 根内，写前过 Intent Guard 预检），UI 文件树 + 编辑器；UI 的人工编辑对 Guard 可见（与 agent 修改同一套越界判定），不自动 commit。
 - **第十一批 · 引擎会话**：claude 适配器会话支持（--resume / session_id 提取 / 流式输出），jobs + SSE；会话一律经 worktree/docker 沙箱 + Intent Guard；openhands 适配器在此批次调研落地。
 - **第十二批 · 动画精修**：车票打孔、CR 支线岔道、终点站庆祝等隐喻动画全量打磨。
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。

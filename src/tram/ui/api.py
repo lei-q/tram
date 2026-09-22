@@ -83,6 +83,14 @@ class ActionRequest(BaseModel):
     by: str = ""  # qa.fail / qa.pass / baseline.save 需要署名
 
 
+class FileSaveRequest(BaseModel):
+    """文件车厢保存请求：UI 的人工编辑，与 agent 修改过同一道 Guard。"""
+
+    path: str
+    content: str
+    by: str
+
+
 def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastAPI:
     ctx: TramContext = load_context(repo)
     approval_token = secrets.token_urlsafe(24) if allow_approvals else ""
@@ -330,6 +338,38 @@ def create_app(repo: Path | None = None, allow_approvals: bool = False) -> FastA
         baseline = ctx.load_baseline()
         text = ctx.baseline_file.read_text(encoding="utf-8")
         return {"yaml": text, "version": baseline.version, "allowed": baseline.allowed_paths}
+
+    # ---------- 文件车厢：列/读开放（只读默认即安全），写走 Guard ----------
+
+    @app.get("/api/files")
+    def api_files(path: str = "") -> dict:
+        try:
+            return {"dir": path, "entries": operations.file_list(ctx, path)}
+        except ValueError as exc:  # 越界 / 非目录
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/api/file")
+    def api_file(path: str) -> dict:
+        try:
+            return operations.file_read(ctx, path)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/api/file")
+    def api_file_save(req: FileSaveRequest, request: Request) -> dict:
+        _require_write(request)
+        if not req.by.strip():
+            raise HTTPException(422, "保存文件要署名：by 不能为空")
+        try:
+            saved = operations.file_save(ctx, req.path, req.content, req.by)
+        except operations.ProtectedPath as exc:  # .tram / .git 结构保护
+            raise HTTPException(403, str(exc)) from exc
+        except operations.GuardBlocked as exc:  # 越界：拦截 + 已自动立案
+            detail = f"越界写入已拦截：{exc}——站台审批放行 CR 或改基线后再保存"
+            raise HTTPException(403, detail) from exc
+        except ValueError as exc:  # 路径逃逸等
+            raise HTTPException(400, str(exc)) from exc
+        return {"ok": True, **saved}
 
     @app.post("/api/approve")
     def api_approve(req: ApprovalRequest, request: Request) -> dict:

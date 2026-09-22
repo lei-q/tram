@@ -570,6 +570,142 @@ document.getElementById("task-list").addEventListener("click", (ev) => {
   }
 });
 
+/* ---------- 文件车厢：列/读/改，保存先过 Intent Guard（越界自动立案） ---------- */
+
+let fileDir = "";
+let openFilePath = "";
+
+async function openDir(rel) {
+  fileDir = rel;
+  try {
+    const body = await fetch("/api/files?path=" + encodeURIComponent(rel)).then((r) => {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+    renderFiles(body.entries);
+  } catch (err) {
+    toast("目录读取失败：" + err.message, true);
+  }
+}
+
+function renderCrumbs() {
+  const wrap = document.getElementById("file-crumbs");
+  wrap.innerHTML = "";
+  const root = document.createElement("span");
+  root.textContent = "📦 仓库根";
+  root.className = "crumb";
+  root.addEventListener("click", () => openDir(""));
+  wrap.appendChild(root);
+  let acc = "";
+  for (const seg of fileDir.split("/").filter(Boolean)) {
+    acc = acc ? `${acc}/${seg}` : seg;
+    const part = acc;
+    const sep = document.createElement("span");
+    sep.textContent = " / ";
+    sep.className = "crumb-sep";
+    const crumb = document.createElement("span");
+    crumb.textContent = seg;
+    crumb.className = "crumb";
+    crumb.addEventListener("click", () => openDir(part));
+    wrap.append(sep, crumb);
+  }
+}
+
+function renderFiles(entries) {
+  renderCrumbs();
+  const list = document.getElementById("file-list");
+  list.innerHTML = "";
+  if (fileDir) {
+    const up = document.createElement("li");
+    up.className = "file-item file-item--dir";
+    up.innerHTML = '<span class="file-icon">↩</span><span class="file-name">..</span>';
+    up.addEventListener("click", () => openDir(fileDir.split("/").slice(0, -1).join("/")));
+    list.appendChild(up);
+  }
+  for (const e of entries) {
+    const li = document.createElement("li");
+    li.className = "file-item " + (e.type === "dir" ? "file-item--dir" : "file-item--file");
+    const icon = e.type === "dir" ? "📁" : "📄";
+    const dot = e.changed ? '<span class="file-dot" title="有未提交改动">●</span>' : "";
+    const size = e.type === "file" ? `<span class="file-size">${fmtSize(e.size)}</span>` : "";
+    li.innerHTML = `<span class="file-icon">${icon}</span><span class="file-name">${esc(
+      e.name
+    )}${dot}</span>${size}`;
+    li.addEventListener("click", () => (e.type === "dir" ? openDir(e.path) : openFile(e.path)));
+    list.appendChild(li);
+  }
+  if (entries.length === 0 && !fileDir) {
+    list.innerHTML = '<li class="empty">仓库根是空的</li>';
+  }
+}
+
+function fmtSize(n) {
+  if (n == null) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function openFile(rel) {
+  try {
+    const res = await fetch("/api/file?path=" + encodeURIComponent(rel));
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.detail || "文件读取失败", true);
+      return;
+    }
+    if (body.binary) {
+      toast("二进制文件，车厢里看不了 👀", true);
+      return;
+    }
+    openFilePath = body.path;
+    document.getElementById("file-editor").hidden = false;
+    document.getElementById("file-path").textContent = body.path;
+    const guard = document.getElementById("file-guard");
+    guard.textContent = body.in_baseline ? "轨内 ✓" : "越界 ⚠";
+    guard.className = "chip " + (body.in_baseline ? "chip--ok" : "chip--fail");
+    document.getElementById("file-text").value = body.content;
+    if (body.truncated) toast("文件过大，只载入前 512KB", true);
+  } catch (err) {
+    toast("文件读取异常：" + err, true);
+  }
+}
+
+document.getElementById("file-save").addEventListener("click", async (ev) => {
+  const by = driverName();
+  if (!by) {
+    toast("保存文件要署名 ✍️（调度台司机署名栏）", true);
+    return;
+  }
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
+      body: JSON.stringify({
+        path: openFilePath,
+        content: document.getElementById("file-text").value,
+        by,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.detail || "保存被拒绝", true);
+      consoleLine(`✗ ${openFilePath} 保存被拒：${body.detail || res.status}`, "line--err");
+      return;
+    }
+    consoleLine(`📄 ${body.path} 已保存（人工编辑 · 已过 Guard · ${body.bytes}B）`);
+    toast("已保存 ✅");
+    openFile(body.path);
+    openDir(fileDir);
+  } catch (err) {
+    toast("保存请求异常：" + err, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 /* ---------- 行车 KPI ---------- */
 
 function fmtDuration(sec) {
@@ -681,6 +817,7 @@ async function boot() {
     console.error("ui-config failed", err);
   }
   applyWriteMode();
+  openDir("");
   const events = await fetch("/api/events?limit=60").then((r) => r.json());
   for (const ev of events.reverse()) prependEvent(ev);
   await refresh();

@@ -71,6 +71,24 @@
     </section>
 
     <section class="card">
+      <h2>文件车厢 · 项目文件（● = 有未提交改动 · 保存先过 Intent Guard，越界自动立案）</h2>
+      <div class="files">
+        <div class="file-tree">
+          <div id="file-crumbs" class="file-crumbs"></div>
+          <ul id="file-list" class="file-list"></ul>
+        </div>
+        <div class="file-editor" id="file-editor" hidden>
+          <div class="file-editor-bar">
+            <code id="file-path"></code>
+            <span id="file-guard" class="chip chip--idle"></span>
+            <button class="dispatch-btn" id="file-save">保存</button>
+          </div>
+          <textarea id="file-text" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>风险气象台 · 越界自动入险（P×I 定天气）</h2>
       <div id="weather" class="weather"></div>
     </section>

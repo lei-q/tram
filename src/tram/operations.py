@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from pathlib import Path
 
 import yaml
 
@@ -203,6 +204,101 @@ def evm_snapshot(ctx: TramContext, day: str | None = None) -> tuple:
                     refs={"risk": risk.id, "event": str(event.seq)},
                 )
     return snap, path, reasons, new_risks
+
+
+# ---------- 文件车厢（UI 文件管理的服务层落点） ----------
+
+MAX_READ_BYTES = 512 * 1024
+
+
+class ProtectedPath(ValueError):
+    """结构保护路径（.tram 证据 / .git 历史）：谁都不能经此改写。"""
+
+
+class GuardBlocked(Exception):
+    """写文件越界：携带 Guard 决定与自动立案的 CR（与 `tram guard check` 同款）。"""
+
+    def __init__(self, decision, cr) -> None:
+        self.decision = decision
+        self.cr = cr
+        detail = f"changes outside scope baseline: {', '.join(decision.violations)}"
+        if cr:
+            detail += f"（CR {cr.id} 已自动立案）"
+        super().__init__(detail)
+
+
+def _safe_target(repo: Path, rel: str) -> Path:
+    """把相对路径钉死在 repo 根内：拒绝绝对路径、.. 与越界 symlink。"""
+    candidate = (repo / rel).resolve()
+    if not candidate.is_relative_to(repo.resolve()):
+        raise ValueError(f"path escapes repo root: {rel}")
+    return candidate
+
+
+def file_list(ctx: TramContext, rel_dir: str = "") -> list[dict]:
+    """列目录（目录优先、.git 不展示），并标注 pending changes 的文件。"""
+    root = _safe_target(ctx.repo, rel_dir or ".")
+    if not root.is_dir():
+        raise ValueError(f"not a directory: {rel_dir}")
+    repo_root = ctx.repo.resolve()
+    changed = set(ctx.git.pending_changes())
+    items: list[dict] = []
+    for entry in sorted(root.iterdir(), key=lambda p: (not p.is_dir(), p.name)):
+        if entry.is_dir() and entry.name == ".git":
+            continue  # git 内部目录不是项目文件，不进车厢
+        rel = entry.relative_to(repo_root).as_posix()
+        item: dict = {
+            "name": entry.name,
+            "type": "dir" if entry.is_dir() else "file",
+            "path": rel,
+            "changed": rel in changed,
+        }
+        if entry.is_file():
+            item["size"] = entry.stat().st_size
+        items.append(item)
+    return items
+
+
+def file_read(ctx: TramContext, rel: str) -> dict:
+    """读文件：文本内容 + 该路径的基线归属（UI 提前亮信号灯）。"""
+    target = _safe_target(ctx.repo, rel)
+    if not target.is_file():
+        raise ValueError(f"not a file: {rel}")
+    raw = target.read_bytes()
+    decision = IntentGuard(ctx.load_baseline()).check([Path(rel).as_posix()])
+    return {
+        "path": Path(rel).as_posix(),
+        "size": len(raw),
+        "binary": b"\0" in raw[:8192],
+        "truncated": len(raw) > MAX_READ_BYTES,
+        "content": None
+        if b"\0" in raw[:8192]
+        else raw[:MAX_READ_BYTES].decode("utf-8", errors="replace"),
+        "in_baseline": decision.ok,
+        "violations": decision.violations,
+    }
+
+
+def file_save(ctx: TramContext, rel: str, content: str, by: str) -> dict:
+    """UI 的人工编辑与 agent 修改同一条 Guard 铁轨：越界拦截并自动立案。"""
+    posix = Path(rel).as_posix()
+    top = posix.split("/", 1)[0]
+    if top in {".tram", ".git"}:
+        raise ProtectedPath(f"{top}/ 受结构保护（事件证据 / git 历史），不经文件车厢改写")
+    target = _safe_target(ctx.repo, rel)
+    decision, cr = guard_check(ctx, [posix])
+    if not decision.ok:
+        raise GuardBlocked(decision, cr)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = content.encode("utf-8")
+    target.write_bytes(data)
+    ctx.events.append(
+        EventKind.FILE_SAVED,
+        source="tram.ui",
+        data={"path": posix, "bytes": len(data), "by": by},
+        refs={"path": posix},
+    )
+    return {"path": posix, "bytes": len(data)}
 
 
 # ---------- 基线（UI 直接编辑的落点） ----------

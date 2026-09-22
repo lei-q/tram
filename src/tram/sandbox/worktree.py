@@ -53,7 +53,7 @@ class WorktreeSession:
 
     def pending_changes(self) -> list[str]:
         proc = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "status", "--porcelain", "-uall"],
             cwd=self.path,
             capture_output=True,
             text=True,

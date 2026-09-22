@@ -404,3 +404,64 @@ main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
   .dispatch-btn:active { transform: none; }
   .dispatch-btn.is-busy { animation: none; }
 }
+
+/* ---- 文件车厢 ---- */
+.files { display: grid; grid-template-columns: 250px 1fr; gap: 14px; }
+@media (max-width: 640px) { .files { grid-template-columns: 1fr; } }
+.file-crumbs { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 8px; }
+.crumb { cursor: pointer; font-weight: 700; }
+.crumb:hover { color: var(--ink); text-decoration: underline; }
+.crumb-sep { opacity: 0.5; }
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.file-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 1px dashed var(--line);
+}
+.file-item:last-child { border-bottom: none; }
+.file-item:hover { background: color-mix(in srgb, var(--pending) 14%, var(--paper)); }
+.file-item--dir .file-name { font-weight: 700; }
+.file-icon { flex: none; }
+.file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-dot { color: var(--pending); margin-left: 6px; }
+.file-size { color: var(--ink-soft); font-size: 11.5px; font-family: ui-monospace, monospace; }
+.file-editor { display: grid; gap: 8px; min-width: 0; }
+.file-editor-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.file-editor-bar code {
+  flex: 1;
+  min-width: 120px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border-radius: 6px;
+  padding: 2px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#file-text {
+  width: 100%;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  min-height: 260px;
+  resize: vertical;
+}

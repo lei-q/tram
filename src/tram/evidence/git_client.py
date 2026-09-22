@@ -51,7 +51,7 @@ class GitClient:
 
     def pending_changes(self) -> list[str]:
         """Changed + staged + untracked files vs HEAD, in this repo."""
-        proc = self.run("status", "--porcelain")
+        proc = self.run("status", "--porcelain", "-uall")
         paths: list[str] = []
         for line in proc.stdout.splitlines():
             if len(line) < 4:
