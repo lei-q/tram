@@ -499,6 +499,94 @@ def test_claude_cmd_includes_partial_messages():
     assert "--include-partial-messages" in cmd
 
 
+def test_merge_conflict_resolved_by_ai(git_repo):
+    """并线冲突 → 引擎就地解决 → Tram 收口合并提交（账不变）。"""
+    from pathlib import Path
+
+    # 主线先落基线版（冲突的共同祖先）
+    (git_repo / "src").mkdir(exist_ok=True)
+    (git_repo / "src" / "shared.py").write_text("version = 'base'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.name=lay", "-c", "user.email=lay@x", "commit", "-m", "base"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+    svc, ctx = _service(git_repo, {"src/shared.py": "version = 'branch'\n"})
+    session, _job = svc.send_message(None, "改共享文件", by="lay")
+    assert _job.commit
+
+    # 主线被人改了同一个文件（制造真冲突）
+    Path(git_repo / "src" / "shared.py").write_text("version = 'main'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.name=lay", "-c", "user.email=lay@x", "commit", "-m", "main edit"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    # 换装会解决冲突的引擎（FakeRunner 在 workspace=repo 根写解决后的文件）
+    svc._engine = lambda name: FakeRunner({"src/shared.py": "version = 'merged'\n"})  # noqa: SLF001
+    result = svc.merge_session(session["id"], by="lay")
+    assert result["merged"] is True
+    assert (git_repo / "src" / "shared.py").read_text(
+        encoding="utf-8"
+    ).strip() == "version = 'merged'"
+    kinds = [e.kind for e in ctx.events.read() if e.source == "tram.chat.merge"]
+    assert EventKind.SESSION_MERGED in kinds
+
+
+def test_merge_conflict_ai_failure_still_refuses(git_repo):
+    """引擎解决不了（留下冲突标记）→ 照旧 abort + 拒绝，主线不脏."""
+    from pathlib import Path
+
+    (git_repo / "src").mkdir(exist_ok=True)
+    (git_repo / "src" / "shared.py").write_text("version = 'base'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.name=lay", "-c", "user.email=lay@x", "commit", "-m", "base"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+    svc, _ctx = _service(git_repo, {"src/shared.py": "version = 'branch'\n"})
+    session, _job = svc.send_message(None, "改共享文件", by="lay")
+    Path(git_repo / "src" / "shared.py").write_text("version = 'main'\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.name=lay", "-c", "user.email=lay@x", "commit", "-m", "main edit"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    svc._engine = lambda name: FakeRunner({})  # noqa: SLF001 - 引擎啥也不干
+    from tram.chat import MergeRefused
+
+    with pytest.raises(MergeRefused, match="AI 未能解决"):
+        svc.merge_session(session["id"], by="lay")
+    # 主线被 abort 回干净状态
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=git_repo, capture_output=True, text=True
+    ).stdout
+    assert not any(ln.startswith(("UU", "AA")) for ln in status.splitlines())
+
+
+def test_next_lap_from_done_terminal(git_repo):
+    """终点站（done）也能折返发新一圈——环线语义下终点即折返点."""
+    from tram import operations
+    from tram.models.state import Phase
+
+    ctx = load_context(git_repo)
+    state = ctx.load_state()
+    state.phase = Phase.DONE
+    ctx.state_store.save(state)
+    result = operations.next_lap(ctx, by="lay")
+    assert result == {"iteration": 2, "phase": "planning"}
+
+
 def test_close_dirty_session_keeps_worktree(git_repo):
     svc, _ctx = _service(git_repo, {"vendor/pyproject.toml": "a=1\n"})
     session, _job = svc.send_message(None, "越界", by="lay")

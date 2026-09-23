@@ -30,6 +30,7 @@ let branchEl;
 let loopPath;
 let loopDetailEl;
 const signalEls = {};
+const stationEls = {};
 let DOMAIN_DATA = null; // /api/domains 词表缓存（环线细节渲染用）
 
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -83,11 +84,14 @@ function buildMap() {
     }
   }
 
-  // 车站（过程组）
+  // 车站（过程组）——分组 + 光环，当前阶段在直线上高亮
   for (const s of PHASES) {
-    el("circle", { cx: s.x, cy: TRACK_Y, r: 15, fill: s.css, stroke: "var(--card)", "stroke-width": 4 });
-    el("text", { class: "station-label", x: s.x, y: TRACK_Y - 26, "text-anchor": "middle" }).textContent =
+    const g = el("g", { class: "station", "data-phase": s.id });
+    el("circle", { class: "station-halo", cx: s.x, cy: TRACK_Y, r: 21, fill: "none" }, g);
+    el("circle", { cx: s.x, cy: TRACK_Y, r: 15, fill: s.css, stroke: "var(--card)", "stroke-width": 4 }, g);
+    el("text", { class: "station-label", x: s.x, y: TRACK_Y - 26, "text-anchor": "middle" }, g).textContent =
       s.label;
+    stationEls[s.id] = g;
   }
 
   // 信号灯（阶段门）——线上方，点击重跑
@@ -126,7 +130,7 @@ function buildMap() {
   el("circle", { cx: 30, cy: -23, r: 2.2 }, face);
   el("path", { d: "M22 -17 q4 4 8 0", fill: "none", "stroke-width": 2 }, face);
   tram("text", { class: "zzz", x: 40, y: -42 }).textContent = "zzz";
-  moveTram("initiating");
+  startTramOrbit();
 
   // ---------- 细节环线：当前阶段的放大镜（内容随 renderState 换装） ----------
   el("path", { class: "track loop-track", d: LOOP_D });
@@ -203,9 +207,37 @@ function tree(x, y, parent) {
   g.setAttribute("transform", `translate(${x} ${y})`);
 }
 
+/* 小火车行驶在环线上（当前阶段的放大镜里巡线），直线上改由光环高亮当前站 */
+let tramF = 0;
+function parkTramAt(f) {
+  const p = pointAt(f);
+  const n = outwardAt(f);
+  tramEl.setAttribute("transform", `translate(${p.x + n.x * 22} ${p.y + n.y * 22 - 8})`);
+}
+function startTramOrbit() {
+  if (reducedMotion()) {
+    parkTramAt(0.02);
+    return;
+  }
+  const speed = 1 / 26; // 一圈约 26 秒，悠闲巡线
+  let last = performance.now();
+  const step = (now) => {
+    const dt = (now - last) / 1000;
+    last = now;
+    tramF = (tramF + dt * speed) % 1;
+    parkTramAt(tramF);
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 function moveTram(phase) {
-  const x = PHASE_X[phase] ?? PHASE_X.initiating;
-  tramEl.setAttribute("transform", `translate(${x} ${TRACK_Y - 30})`);
+  // 兼容旧调用点：阶段变化只改直线高亮，小火车一直在环线上
+  highlightStation(phase);
+}
+function highlightStation(phaseId) {
+  for (const [pid, node] of Object.entries(stationEls)) {
+    node.classList.toggle("station--active", pid === phaseId);
+  }
 }
 
 /* 细节环线换装：当前阶段的知识域子过程铺满一圈——每颗节点独享 ~300px 弧长，标签永不重叠 */

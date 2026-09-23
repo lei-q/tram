@@ -323,11 +323,23 @@ class ChatService:
             text=True,
         )
         if proc.returncode != 0:
-            subprocess.run(["git", "merge", "--abort"], cwd=self.ctx.repo, capture_output=True)
-            raise MergeRefused(
-                "并线有冲突——确定性工具不裁语义冲突，请手动 `git merge "
-                f"{session['branch']}` 解决后重试"
+            resolved = self._ai_resolve_conflicts(session)
+            if not resolved:
+                subprocess.run(["git", "merge", "--abort"], cwd=self.ctx.repo, capture_output=True)
+                raise MergeRefused(
+                    f"并线有冲突且 AI 未能解决——请手动 `git merge {session['branch']}` 解决后重试"
+                )
+            # AI 已就地解决冲突标记：由 Tram 亲自收口合并提交（落款与账不变）
+            subprocess.run(["git", "add", "-A"], cwd=self.ctx.repo, capture_output=True, check=True)
+            commit = subprocess.run(
+                ["git", *TRAM_IDENTITY, "commit", "-m", merge_msg],
+                cwd=self.ctx.repo,
+                capture_output=True,
+                text=True,
             )
+            if commit.returncode != 0:
+                subprocess.run(["git", "merge", "--abort"], cwd=self.ctx.repo, capture_output=True)
+                raise MergeRefused(f"冲突解决后合并提交失败：{commit.stderr.strip()[:200]}")
 
         sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -407,6 +419,42 @@ class ChatService:
             for path in sorted(set(changed) & set(theirs)):
                 overlaps.append({"path": path, "session": other["id"]})
         return overlaps
+
+    def _ai_resolve_conflicts(self, session: dict) -> bool:
+        """冲突就地交给引擎解（护航者的活：AI 干内容活，Tram 收口提交）.
+
+        合并状态保留，引擎在主工作区编辑冲突文件去掉标记；成功与否由
+        git 的未解决清单客观判定——LLM 不进判定路径，只产出解决内容。
+        """
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=self.ctx.repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        conflicted = [ln[3:] for ln in status.splitlines() if ln.startswith(("UU", "AA", "DD"))]
+        if not conflicted:
+            return False
+        engine = self._engine(session.get("engine") or "fake")
+        prompt = (
+            "仓库里有 git 合并冲突，请解决以下文件（编辑文件去掉 <<<<<<< ======= >>>>>>> "
+            "冲突标记，保留双方语义上正确的合并结果；只改这些文件，不要执行 git commit）：\n"
+            + "\n".join(f"- {p}" for p in conflicted)
+        )
+        try:
+            engine.run(TaskSpec(id="MERGE", prompt=prompt), self.ctx.repo)
+        except Exception:  # noqa: BLE001 - 引擎失败按未解决处理，走 abort 拒绝
+            return False
+        # 客观判定：冲突标记还在就是没解决（git 的 UU 状态要 add 才清，不能作准）
+        for rel in conflicted:
+            target = self.ctx.repo / rel
+            if not target.exists():
+                return False
+            text = target.read_text(encoding="utf-8", errors="replace")
+            if "<<<<<<< " in text or ">>>>>>> " in text:
+                return False
+        return True
 
     def _branch_changes(self, branch: str) -> list[str]:
         """分支领先主线的变更路径（merge-base..branch）。"""

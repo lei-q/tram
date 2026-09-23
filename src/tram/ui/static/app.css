@@ -995,3 +995,20 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .dock-tab.is-attention { animation: none; }
 }
+
+/* ---- 第二十九批 · 环线巡行与车站高亮 ---- */
+.station-halo {
+  stroke: var(--pending);
+  stroke-width: 3;
+  stroke-dasharray: 4 6;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.station--active .station-halo { opacity: 1; animation: halospin 6s linear infinite; }
+.station--active .station-label { font-size: 16px; }
+@keyframes halospin {
+  to { stroke-dashoffset: -60; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .station--active .station-halo { animation: none; }
+}

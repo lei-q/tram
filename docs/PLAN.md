@@ -147,6 +147,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第二十八批：即时提示与实时思考）**：(1) **毫秒级提示**：SVG 原生 `<title>` 是浏览器级秒延迟且不可调——全部换成 `data-tip` + 自绘浮动 tip（mouseover 即显、mousemove 跟随、防溢屏钳位），信号灯/Trammy/子过程节点三处。(2) **实时思考过程**：claude 加 `--include-partial-messages` 拿词级 `thinking_delta` 增量流；`_tap` 聚合缓冲（`THINK_FLUSH_CHARS=200`：攒一截或块结束再出一行，防逐词刷屏、一字不丢），行型 `k=think`（💭 淡斜体样式）进 SSE 与聊天历史；fold_stream 对 stream_event 天然免疫（只认 assistant/result）。(3) **行车记录自动切换**：`consoleLine` 有新记录且行车记录 tab 不在前台时，自动 `switchDockTab` 切换过来 + tab 蜜橘闪两下（`is-attention`，respect reduced-motion）——司机刚点了按钮，结果就该立刻看见。
 
+**已完成（第二十九批：AI 冲突解决 / 终点折返 / 环线巡行）**：(1) **并线冲突调 AI**：merge 冲突不再一拒了之——`_ai_resolve_conflicts` 把冲突文件清单交给会话引擎就地编辑（去冲突标记，AI 干内容活），**客观判定**用标记残留检查（git UU 状态要 add 才清、不能作准），解决成功由 Tram 亲自 add+commit 收口（落款与事件账不变），失败照旧 abort 拒绝且主线干净。(2) **终点折返**：`lap.next` 允许 `closing` **与 `done`**——环线语义下终点站即折返点，G3 收完官也能再发一圈。(3) **小火车巡行环线**：Trammy 不再蹲直线上，rAF 沿细节环线持续巡行（约 26s/圈，reduced-motion 停在环顶）；直线上改为**当前阶段站高亮**（蜜橘虚线光环旋转 + 站名字号放大）。
+
 **后续批次（UI 全功能化路线）**：
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 

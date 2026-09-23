@@ -66,9 +66,10 @@ def next_lap(ctx: TramContext, by: str) -> dict:
     from tram.models.state import Phase
 
     state = ctx.load_state()
-    if state.phase != Phase.CLOSING:
+    if state.phase not in (Phase.CLOSING, Phase.DONE):
         raise ValueError(
-            f"环线折返要在收尾站发车（当前 {state.phase.value}）；终局收车走 G3 release"
+            f"环线折返要在收尾站（或终点站再出发）发车（当前 {state.phase.value}）；"
+            "终局收车走 G3 release"
         )
     state.iteration += 1
     state.phase = Phase.PLANNING
