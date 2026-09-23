@@ -268,14 +268,11 @@ tram replay --limit 50
 tram replay --kind intent_blocked
 ```
 
-### tram autopilot
-**目的**：自动驾驶——决策表哑司机（无 LLM 判定），锚点之间自动推进、锚点处硬停。
+### tram navigate
+**目的**：领航员——只读护航建议（护航者纲领：Tram 不驾驶列车，方向盘在你手里）。扫基线/CR/工件/任务/EVM/风险/需求对账，开一张「建议动作 + 去哪点」清单；零副作用（不跑门禁、不写状态、不发事件）。
 ```bash
-tram autopilot --dry-run        # 干跑：探门看信号（事件留痕），零动作，只报下一步
-tram autopilot --engine claude  # G2 红灯时孵 claude 整改会话（默认 fake）
-tram autopilot --max-steps 20   # 步数预算（默认 10，防打转）
+tram navigate        # UI 调度条「🧭 领航」同款
 ```
-行为：缺工件自动开票重试；G2 测试红自动派整改会话（产出走并线正门）；**四个锚点永不自动**——基线批准、CR 裁决、release 放行、整改升级待人审，到了就停等你。急停：`touch .tram/autopilot-stop`（删除恢复）。UI 调度条 🤖 按钮同款。
 
 ### tram lap next
 **目的**：环线折返——过程组每圈重复（渐进明细）。收尾站二选一：本命令进下一圈（带着上一圈的需求/风险/变更/EVM 账回规划站），或走 G3 release 终局收车。

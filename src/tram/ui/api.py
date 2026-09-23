@@ -97,15 +97,6 @@ class FileSaveRequest(BaseModel):
     by: str
 
 
-class AutopilotRequest(BaseModel):
-    """自动驾驶请求：决策表司机，锚点硬停。"""
-
-    dry_run: bool = False
-    max_steps: int = 10
-    engine: str = "fake"
-    by: str
-
-
 class ChatOpenRequest(BaseModel):
     """开一条引擎会话：engine（claude|openhands|fake）+ 司机署名 + WBS 工作包锚定。"""
 
@@ -423,18 +414,6 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
-    @app.post("/api/autopilot")
-    def api_autopilot(req: AutopilotRequest, request: Request) -> dict:
-        """自动驾驶：锚点之间自动推进，锚点处硬停（决策表，无 LLM 判定）。"""
-        _require_write(request)
-        if not req.by.strip():
-            raise HTTPException(422, "自动驾驶要署名：by 不能为空")
-        from tram.autopilot import Autopilot
-
-        return Autopilot(
-            ctx, engine=req.engine, dry_run=req.dry_run, max_steps=req.max_steps, by=req.by
-        ).run()
-
     @app.get("/api/file")
     def api_file(path: str) -> dict:
         try:
@@ -457,6 +436,13 @@ def create_app(
         except ValueError as exc:  # 路径逃逸等
             raise HTTPException(400, str(exc)) from exc
         return {"ok": True, **saved}
+
+    @app.get("/api/navigate")
+    def api_navigate() -> dict:
+        """领航员：只读护航建议（不执行任何动作——执行永远是驾驶员的手）."""
+        from tram.navigation import navigate as run_navigator
+
+        return run_navigator(ctx)
 
     # ---------- 会话车厢：与代码生成引擎直接对话（jobs + SSE 流式） ----------
 

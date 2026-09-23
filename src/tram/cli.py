@@ -899,34 +899,21 @@ def monitor() -> None:
 
 
 @app.command()
-def autopilot(
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="只报决策不执行（预演下一动作）")
-    ] = False,
-    max_steps: Annotated[int, typer.Option(help="步数预算，防打转")] = 10,
-    engine: Annotated[str, typer.Option(help="整改会话引擎 fake|claude|openhands")] = "fake",
-) -> None:
-    """自动驾驶：锚点之间自动推进，锚点处硬停（决策表司机，判定无 LLM）。"""
-    from tram.autopilot import Autopilot
+def navigate() -> None:
+    """领航员：只读护航建议——扫状态/工件/CR/风险/对账，给驾驶员开行动清单（不执行）."""
+    from tram.navigation import navigate as run_navigator
 
     try:
         ctx = load_context()
-        result = Autopilot(ctx, engine=engine, dry_run=dry_run, max_steps=max_steps).run()
+        result = run_navigator(ctx)
     except Exception as exc:  # noqa: BLE001
         _fail(exc)
         return
-    for line in result["journey"]:
-        console.print(line)
     console.print(
-        Panel(
-            result["stop"],
-            title=(
-                f"自动驾驶（{result['mode']} · {result['actions']} 个动作"
-                f" · engine={result['engine']}）"
-            ),
-            border_style="green" if "绿灯" in result["stop"] else "yellow",
-        )
+        f"🧭 领航员 · {result['phase']} · 环线第 {result['iteration']} 圈 · {result['summary']}"
     )
+    for i, rec in enumerate(result["recommendations"], 1):
+        console.print(f"  {i}. {rec['label']}  [dim]→ {rec['where']}[/dim]")
 
 
 @app.command()

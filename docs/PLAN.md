@@ -143,8 +143,9 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第二十六批：护航知识库）**：核心价值回路落地。(1) **项目文件白名单**（`knowledge.DOC_GROUPS`）：01-initiating（项目建议书/章程）、02-planning（项目管理/范围/进度/成本管理计划、范围/进度/成本基准、风险登记册）、04-monitoring（变更日志/进度报告）——提炼器只能写这些名字，越权文件名整段丢弃。(2) **确定性收集**：每轮跑完 `refresh_monitoring`（变更日志引变更账尾部、进度报告写阶段/任务/EVM/风险事实）。(3) **引擎提炼**（`tram knowledge` / UI 📚 提炼 / `knowledge.distill` 动词 / **收车自动触发**——inline 同步、服务端后台线程不阻塞收车）：把现有草稿+最近对话+变更/风险账喂给引擎，`=== FILE: 名 ===` 分段输出蒸馏内容；LLM 只产内容，白名单与落盘由 Tram 控制，`KNOWLEDGE_DISTILLED` 事件留痕。(4) **按需加载**：`digest()` 节选章程/风险册/进度报告/变更日志（总量 2200 字封顶）拼进下轮对话前导——循环回路闭合。测试教训：close 测试曾摸到真 claude（会话 engine 字段 vs 换装实例是两回事），autouse 换 FakeRunner 钉死。
 
+**已完成（第二十七批：领航员改造）**：护航者纲领的彻底兑现——**删除自动驾驶**（它替司机开票、孵整改会话、并线，是抢方向盘），换上**领航员**（`tram/navigation.py`）：纯只读的确定性清单——扫基线审批/CR/工件（G0/G1 检查项）/任务册/EVM 节拍/风暴风险/需求对账，吐出有序「建议动作」（approve-baseline / artifact.generate / chat / monitor.sweep / risk.resolve / anchor / flow.run / G3-or-下一圈），每条带「去哪点」指引；**零副作用**——不跑门禁、不写状态、不发事件，执行永远是驾驶员的手（审计从点击那一刻才开始）。CLI `tram navigate`；API `GET /api/navigate`（只读端点，无需写模式）；UI 🤖 换 🧭 领航按钮（console 逐条打建议）。route_reasons 决策表与 Autopilot/AUTOPILOT_STEP 事件随模块删除（枚举保留兼容旧事件流）。测试教训：字符串拼接改 API 时切掉了 /api/file 与 GET /api/chat/sessions——恢复了，以后改 API 用精确 Edit 不用 index 切割。
+
 **后续批次（UI 全功能化路线）**：
-- **第二十七批候选 · 领航员改造**：自动驾驶降级为建议模式（只报下一动作不执行），全面对齐护航者定位。
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 
 ## 9. 风险登记（项目自身）

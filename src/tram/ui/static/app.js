@@ -1457,46 +1457,18 @@ async function loadWbsPackages() {
   }
 }
 
-/* 自动驾驶：决策表司机，锚点硬停（confirm 后才点火） */
-document.getElementById("autopilot-run").addEventListener("click", async (ev) => {
-  if (!uiConfig.approvals_enabled) {
-    toast("只读模式 —— `tram ui --approve` 解锁自动驾驶", true);
-    return;
-  }
-  const by = driverName();
-  if (!by) {
-    toast("自动驾驶要署名 ✍️（顶栏司机署名）", true);
-    return;
-  }
-  if (
-    !window.confirm(
-      "点火自动驾驶？\n锚点之间自动推进（缺件自动开票、G2 红灯自动派整改会话并线）；\n基线批准 / CR 裁决 / release 放行四个锚点会硬停等你。\n急停：建 .tram/autopilot-stop 文件。"
-    )
-  )
-    return;
-  const btn = ev.target.closest(".dispatch-btn");
-  btn.disabled = true;
-  btn.classList.add("is-busy");
+/* 领航员：只读护航建议——不执行任何动作，方向盘在驾驶员手里 */
+document.getElementById("navigate-run").addEventListener("click", async () => {
   try {
-    const res = await fetch("/api/autopilot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Tram-Token": uiConfig.token },
-      body: JSON.stringify({ dry_run: false, by }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      toast(body.detail || "自动驾驶被拒", true);
-      return;
+    const body = await fetch("/api/navigate").then((r) => r.json());
+    consoleLine(`🧭 领航员 · ${body.phase} · 环线第 ${body.iteration} 圈 · ${body.summary}`);
+    for (const rec of body.recommendations || []) {
+      consoleLine(`  → ${rec.label}（${rec.where}）`);
     }
-    for (const line of body.journey || []) consoleLine("🤖 " + line);
-    consoleLine(`🏁 自动驾驶停车：${body.stop}（${body.actions} 个动作）`);
-    toast(`自动驾驶停车：${body.stop}`);
-    refresh();
+    if (!(body.recommendations || []).length) consoleLine("  → 护航仪表全绿");
+    toast(`领航员：${body.summary}`);
   } catch (err) {
-    toast("自动驾驶异常：" + err, true);
-  } finally {
-    btn.disabled = false;
-    btn.classList.remove("is-busy");
+    toast("领航异常：" + err, true);
   }
 });
 
