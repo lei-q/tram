@@ -857,3 +857,55 @@ h2 {
 
 /* ---- 第二十二/二十三批 · 环线与风险闭环 ---- */
 .wx-act { display: flex; gap: 6px; margin-left: auto; }
+
+/* ---- 第二十四批 · 环线线路图 ---- */
+/* 行进方向：轨道上流动的虚线顺时针 marching（dasharray 周期 30，offset -60/循环） */
+.track-flow {
+  fill: none;
+  stroke: color-mix(in srgb, var(--pending) 55%, transparent);
+  stroke-width: 3;
+  stroke-dasharray: 4 26;
+  stroke-linecap: round;
+  animation: railflow 2.6s linear infinite;
+  pointer-events: none;
+}
+@keyframes railflow {
+  to { stroke-dashoffset: -60; }
+}
+.track-arrow {
+  fill: var(--ink-soft);
+  font-size: 13px;
+  pointer-events: none;
+}
+.milestone line { stroke: var(--track); stroke-width: 2.5; }
+.milestone text {
+  fill: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+}
+/* 子过程节点：轨道上的珠子；当前阶段的放大发光并显名，其余收暗 */
+.sub-node-dot { fill: var(--track); stroke: var(--card); stroke-width: 1.5; }
+.sub-node-label {
+  fill: var(--ink-soft);
+  font-size: 10px;
+  opacity: 0;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 3;
+}
+.sub-node--active .sub-node-dot {
+  fill: var(--pending);
+  stroke: var(--ink);
+  stroke-width: 2;
+  animation: subglow 1.6s ease-in-out infinite;
+}
+.sub-node--active .sub-node-label { opacity: 1; fill: var(--ink); font-size: 11px; font-weight: 700; }
+.sub-node:not(.sub-node--active) { opacity: 0.55; }
+@keyframes subglow {
+  50% { stroke-width: 3.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .track-flow { animation: none; }
+  .sub-node--active .sub-node-dot { animation: none; }
+}
