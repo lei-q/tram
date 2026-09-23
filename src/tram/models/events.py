@@ -29,6 +29,7 @@ class EventKind(enum.StrEnum):
     FILE_SAVED = "file_saved"
     SESSION_MERGED = "session_merged"
     AUTOPILOT_STEP = "autopilot_step"
+    RISK_RESOLVED = "risk_resolved"
 
 
 class TramEvent(BaseModel):

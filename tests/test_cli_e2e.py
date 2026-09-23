@@ -202,7 +202,12 @@ def test_full_governance_slice(git_repo, monkeypatch):
     from datetime import date as _date
 
     today = _date.today().isoformat()
-    assert {r.id for r in state.risks} == {f"r-evm-{today}-spi", f"r-evm-{today}-cpi"}
+    # EVM 越界入险 + Guard 拦截入险（第二十三批起越界也进风险登记册）
+    assert {r.id for r in state.risks} == {
+        f"r-evm-{today}-spi",
+        f"r-evm-{today}-cpi",
+        "r-guard-cr-0001",
+    }
 
     # 10. KPI dashboard: the step-3/step-7 gate failures closed by later passes
     result = runner.invoke(app, ["kpi"], env={"COLUMNS": "220"})

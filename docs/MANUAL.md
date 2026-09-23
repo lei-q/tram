@@ -277,6 +277,25 @@ tram autopilot --max-steps 20   # 步数预算（默认 10，防打转）
 ```
 行为：缺工件自动开票重试；G2 测试红自动派整改会话（产出走并线正门）；**四个锚点永不自动**——基线批准、CR 裁决、release 放行、整改升级待人审，到了就停等你。急停：`touch .tram/autopilot-stop`（删除恢复）。UI 调度条 🤖 按钮同款。
 
+### tram lap next
+**目的**：环线折返——过程组每圈重复（渐进明细）。收尾站二选一：本命令进下一圈（带着上一圈的需求/风险/变更/EVM 账回规划站），或走 G3 release 终局收车。
+```bash
+tram lap next --by 你的名字   # 只在收尾站有效；UI 调度条「↺ 下一圈」同款
+```
+
+### tram monitor
+**目的**：巡检乘务——监控不是一座车站。EVM 快照（当天幂等）+ Guard 核验 + 风险概览 + 需求对账，随时点随时巡（UI 👁 巡检同款）。
+```bash
+tram monitor
+```
+
+### tram risk list / resolve
+**目的**：风险登记册查看与人裁流转（open → watching → closed）。EVM 越界与 Guard 拦截自动入册；UI 气象台行内 👀/✓ 按钮同款。
+```bash
+tram risk list
+tram risk resolve r-guard-cr-0001 --status closed --by 你的名字
+```
+
 ### tram ui
 **目的**：启动驾驶舱 UI。**默认只读**；`--approve` 开写模式。
 ```bash

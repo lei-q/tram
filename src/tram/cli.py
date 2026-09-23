@@ -780,7 +780,99 @@ def kpi() -> None:
     console.print(table)
 
 
+risk_app = typer.Typer(help="risk register: view & resolve", no_args_is_help=True)
+app.add_typer(risk_app, name="risk")
+
+
+@risk_app.command("list")
+def risk_list() -> None:
+    """List risk register items (open first)."""
+    try:
+        ctx = load_context()
+        state = ctx.load_state()
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    if not state.risks:
+        console.print(
+            "[dim]risk register is empty - EVM breaches / guard blocks auto-register[/dim]"
+        )
+        return
+    table = Table(title="🌤 risk register")
+    table.add_column("id")
+    table.add_column("P×I")
+    table.add_column("status")
+    table.add_column("owner")
+    table.add_column("description", overflow="fold")
+    for r in sorted(state.risks, key=lambda x: (x.status == "closed", -(x.probability * x.impact))):
+        table.add_row(
+            r.id,
+            f"{r.probability}×{r.impact}={r.probability * r.impact}",
+            r.status.value,
+            r.owner or "—",
+            r.description,
+        )
+    console.print(table)
+
+
+@risk_app.command("resolve")
+def risk_resolve_cmd(
+    risk_id: Annotated[str, typer.Argument(help="e.g. r-guard-cr-0001")],
+    status: Annotated[str, typer.Option(help="watching | closed | open")] = "closed",
+    by: Annotated[str, typer.Option(help="decider identity")] = "human",
+) -> None:
+    """HITL: resolve a risk (open -> watching -> closed)."""
+    try:
+        ctx = load_context()
+        result = operations.risk_resolve(ctx, risk_id, status, by)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print(f"[green]risk {result['risk']} -> {result['status']} ✅[/green]")
+
+
 @app.command()
+def lap(
+    by: Annotated[str, typer.Option(help="司机署名")] = "driver",
+) -> None:
+    """环线折返：收尾站发车进下一圈（过程组每圈重复；终局收车走 G3 release）。"""
+    try:
+        ctx = load_context()
+        result = operations.next_lap(ctx, by)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    console.print(
+        f"[green]↺ 第 {result['iteration']} 圈发车 —— 回到 {result['phase']} 站，"
+        "带着上一圈的完整账（需求/风险/变更/EVM）重新规划 ✅[/green]"
+    )
+
+
+@app.command()
+def monitor() -> None:
+    """巡检：监控乘务——EVM 快照（当天幂等）+ Guard 核验 + 风险概览。"""
+    try:
+        ctx = load_context()
+        out = operations.monitor_sweep(ctx)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    evm = out["evm"]
+    if evm.get("skipped"):
+        console.print(f"📊 EVM：今天已快照（SPI {evm['spi']} · CPI {evm['cpi']}）")
+    else:
+        mark = f" ⚠ {'; '.join(evm['breaches'])}" if evm["breaches"] else " ✅"
+        console.print(f"📊 EVM：SPI {evm['spi']} · CPI {evm['cpi']}{mark}")
+    guard = out["guard"]
+    if guard["ok"]:
+        console.print("🛡 Guard：轨内行驶，无越界改动")
+    else:
+        console.print(
+            f"🛑 Guard：越界 {len(guard['violations'])} 处 → CR {guard['cr']} 已立案", style="red"
+        )
+    console.print(f"🌤 风险：{out['risks']['open']} 项未决（`tram kpi` / UI 气象台看详情）")
+
+
 @app.command()
 def autopilot(
     dry_run: Annotated[

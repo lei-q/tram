@@ -131,6 +131,10 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第二十一批：对话控制与知识沉淀）**：(1) **司机急停**：⏹ 按钮终止本轮引擎进程——ChatJob 带 `threading.Event`，三个适配器 stream() 收 `stop_event`（stdout 循环逐行检查，命中即 `proc.terminate()`）；本轮终态 `stopped`：不进 Guard、无提交、不沉淀知识，`AGENT_RUN_FINISHED(status=stopped)` 留痕；终态 job 再停 409；UI 发送中亮停止键、done 显示停止说明。（2) **多行输入**：input 换 textarea，Enter 发送 / Shift+Enter 换行，自动长高三行封顶内滚，发送后收起。(3) **知识沉淀**（整合·管理项目知识子过程落地）：每轮跑完确定性抄录三本账到 `.tram/knowledge/`——`requirements.md`（用户消息即需求陈述，带会话/任务/时间戳）、`changes.md`（有提交才记：commit + 逐路径子过程归属 + 知识域汇总）、`risks.md`（越界拦截才记：CR 与裁决指引）；纯事实抄录不解读——语义提炼留给人，铁轨只保证账不漏。
 
+**已完成（第二十二批：环线与巡检）**：治「过程组被画成顺序阶段」的瀑布残余。(1) **环线模型**：`ProjectState.iteration`（第 N 圈）；`tram lap next`（UI ↺ 下一圈 / API `lap.next`，署名）在**收尾站折返**——iteration+1 回规划站，带着上一圈完整的账（需求/风险/变更/EVM）重新规划，`PHASE_CHANGED(data.lap=true)` 留痕；别处发车被拒（终局收车仍走 G3 release，二选一语义清晰）。阶段 chip 显示「第 N 圈」。(2) **监控乘务化**：`tram monitor`（UI 👁 巡检 / `monitor.sweep`）= EVM 快照（**当天幂等**，重复巡检不刷屏）+ Guard 核验（越界照章立案）+ 风险概览 + 需求对账——监控从「执行与收尾之间的车站」变成随车乘务，随时点随时巡。
+
+**已完成（第二十三批：风险闭环与需求对账）**：(1) **越界拦截入风险登记册**：两条 Guard 路径（`tram guard check` 与会话消息）拦截时除立案 CR 外，同时登记 `r-guard-<cr>` 风险（P×I=9 风暴级，同 CR 幂等）——风险册与知识账（risks.md）双轨。(2) **风险状态流转**：`tram risk list/resolve`（UI 气象台行内 👀观察/✓关闭 按钮，`risk.resolve` 动词署名），`RISK_RESOLVED` 事件；snapshot 增 `storm_risks`（P×I≥9 未决数）。(3) **需求对账（渐进明细的机械落点）**：`requirement_gaps` ——项目定义了 WBS 工作包时点名未锚定的在途任务；进巡检输出与站台审批提醒（「N 个在途任务未锚定工作包——渐进明细没跟上」）。
+
 **后续批次（UI 全功能化路线）**：
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 

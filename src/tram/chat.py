@@ -669,6 +669,9 @@ class ChatService:
                 data={"cr": cr.id, "task": job.task_id, "paths": decision.violations},
                 refs={"event": str(event.seq), "task": job.task_id},
             )
+            from tram import operations as _ops
+
+            _ops.register_guard_risk(ctx, cr.id, decision.violations, event.seq)
             ctx.events.append(
                 EventKind.AGENT_RUN_FINISHED,
                 source="tram.chat",

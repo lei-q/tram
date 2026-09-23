@@ -56,6 +56,131 @@ def run_flow(ctx: TramContext) -> tuple[dict, str]:
     return invoke_flow(GateRunner(ctx))
 
 
+def next_lap(ctx: TramContext, by: str) -> dict:
+    """环线折返：收尾站二选一——G3 终局收车，或本动词进入下一圈.
+
+    过程组每圈重复一遍（渐进明细的机械落点）：带着上一圈完整的
+    需求/风险/变更/EVM 账回到规划站；WBS 与基线在 G1 重新校对。
+    """
+    from tram.models.events import EventKind
+    from tram.models.state import Phase
+
+    state = ctx.load_state()
+    if state.phase != Phase.CLOSING:
+        raise ValueError(
+            f"环线折返要在收尾站发车（当前 {state.phase.value}）；终局收车走 G3 release"
+        )
+    state.iteration += 1
+    state.phase = Phase.PLANNING
+    ctx.state_store.save(state)
+    ctx.events.append(
+        EventKind.PHASE_CHANGED,
+        source="tram.lap",
+        data={
+            "from": "closing",
+            "to": "planning",
+            "iteration": state.iteration,
+            "lap": True,
+            "by": by,
+        },
+    )
+    return {"iteration": state.iteration, "phase": state.phase.value}
+
+
+def monitor_sweep(ctx: TramContext) -> dict:
+    """巡检：监控不是一座车站，是随车乘务——EVM（当天幂等）+ Guard + 风险概览 + 需求对账."""
+    from tram.metrics.evm import latest_snapshot
+
+    state = ctx.load_state()
+    out: dict = {"date": _utcnow().date().isoformat(), "iteration": state.iteration}
+
+    latest = latest_snapshot(ctx)
+    if latest is not None and latest.date.isoformat() == out["date"]:
+        out["evm"] = {"skipped": True, "detail": "今天已快照", "spi": latest.spi, "cpi": latest.cpi}
+    else:
+        snap, _path, reasons, new_risks = evm_snapshot(ctx)
+        out["evm"] = {
+            "skipped": False,
+            "spi": snap.spi,
+            "cpi": snap.cpi,
+            "breaches": reasons,
+            "new_risks": [r.id for r in new_risks],
+        }
+
+    decision, cr = guard_check(ctx, None)
+    out["guard"] = {
+        "ok": decision.ok,
+        "violations": decision.violations,
+        "cr": cr.id if cr else None,
+    }
+
+    open_risks = [r for r in ctx.load_state().risks if r.status != "closed"]
+    out["risks"] = {"open": len(open_risks)}
+    out["requirements"] = requirement_gaps(ctx)
+    return out
+
+
+# ---------- 风险闭环 / 需求对账（监控贯穿、渐进明细的机械落点） ----------
+
+
+def register_guard_risk(
+    ctx: TramContext, cr_id: str, violations: list[str], trigger_seq: int
+) -> None:
+    """越界拦截入风险登记册（P×I=9 风暴级）——账本之外，风险面板也要看得见。"""
+    from tram.models.risk import RiskItem, RiskStrategy
+
+    state = ctx.load_state()
+    rid = f"r-guard-{cr_id}"
+    if any(r.id == rid for r in state.risks):
+        return  # 同一 CR 只入一次
+    state.risks.append(
+        RiskItem(
+            id=rid,
+            description=f"越界改动被拦截（CR {cr_id}）：{'、'.join(violations[:5])}",
+            probability=3,
+            impact=3,
+            strategy=RiskStrategy.MITIGATE,
+            trigger_event_seq=trigger_seq,
+            owner="tram.guard",
+        )
+    )
+    ctx.state_store.save(state)
+
+
+def risk_resolve(ctx: TramContext, risk_id: str, status: str, by: str) -> dict:
+    """风险状态流转：open/watching/closed——人裁，事件留痕。"""
+    from tram.models.events import EventKind
+    from tram.models.risk import RiskStatus
+
+    try:
+        target = RiskStatus(status)
+    except ValueError as exc:
+        raise ValueError(f"unknown status: {status}（open | watching | closed）") from exc
+    state = ctx.load_state()
+    item = next((r for r in state.risks if r.id == risk_id), None)
+    if item is None:
+        raise ValueError(f"unknown risk: {risk_id}（见风险气象台 / tram kpi）")
+    item.status = target
+    ctx.state_store.save(state)
+    ctx.events.append(
+        EventKind.RISK_RESOLVED,
+        source="tram.risk",
+        data={"risk": risk_id, "status": target.value, "by": by},
+        refs={"risk": risk_id},
+    )
+    return {"risk": risk_id, "status": target.value}
+
+
+def requirement_gaps(ctx: TramContext) -> dict:
+    """需求对账（渐进明细）：项目定义了 WBS 工作包时，还有多少在途任务没锚定。"""
+    packages = ctx.load_wbs()
+    if not packages:
+        return {"unanchored": 0, "mode": "free"}
+    state = ctx.load_state()
+    unanchored = [t.id for t in state.tasks if not t.wbs_package and t.status != "done"]
+    return {"unanchored": len(unanchored), "tasks": unanchored[:20], "mode": "anchored"}
+
+
 def guard_check(ctx: TramContext, paths: list[str] | None = None) -> tuple:
     """Intent Guard：越界即门红 + 自动建 CR（依赖清单越界按 procurement）。"""
     baseline = ctx.load_baseline()
@@ -83,6 +208,7 @@ def guard_check(ctx: TramContext, paths: list[str] | None = None) -> tuple:
             data={"cr": cr.id, "type": cr.type.value, "paths": decision.violations},
             refs={"event": str(event.seq)},
         )
+        register_guard_risk(ctx, cr.id, decision.violations, event.seq)
     return decision, cr
 
 

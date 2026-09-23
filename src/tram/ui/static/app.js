@@ -189,7 +189,8 @@ function renderState(state) {
   document.getElementById("project-name").textContent = `Tram · ${state.project_name}`;
   const chip = document.getElementById("phase-chip");
   const phase = PHASES.find((p) => p.id === state.phase);
-  chip.textContent = `阶段：${phaseLabel(state.phase)}`;
+  const lap = state.iteration > 1 ? ` · 第${state.iteration}圈` : "";
+  chip.textContent = `阶段：${phaseLabel(state.phase)}${lap}`;
   if (phase) chip.style.background = phase.css;
 
   const base = document.getElementById("baseline-chip");
@@ -313,6 +314,21 @@ function renderPlatform(state) {
   }
   if (state.evm && state.evm.breaches && state.evm.breaches.length) {
     items.push({ icon: "🌧", desc: "EVM 越界已自动入险，需要纠偏决策", cmd: "tram evm show  # 看越界详情" });
+  }
+  if (state.storm_risks > 0) {
+    items.push({
+      icon: "⛈",
+      desc: `${state.storm_risks} 项风暴级风险未决（P×I≥9）——去风险气象台裁决`,
+      cmd: "tram risk resolve <R-id> --status watching|closed  # 或气象台按钮",
+    });
+  }
+  const gaps = state.requirement_gaps;
+  if (gaps && gaps.mode === "anchored" && gaps.unanchored > 0) {
+    items.push({
+      icon: "🧩",
+      desc: `${gaps.unanchored} 个在途任务未锚定 WBS 工作包——渐进明细没跟上，规划站补对账`,
+      cmd: "查看任务板 wbs 列 / 会话开锚定会话消化需求",
+    });
   }
   // 角标：待人的事有几件，右轨标题上一眼可见
   const badge = document.getElementById("platform-badge");
@@ -505,6 +521,24 @@ function narrate(verb, body) {
     consoleLine(`✅ ${body.task} QA 验证通过 → done`);
   } else if (verb === "baseline.save") {
     consoleLine(`📝 基线草稿已保存（v${body.version}）· 批准仍走站台审批`);
+  } else if (verb === "lap.next") {
+    consoleLine(`↺ 第 ${body.iteration} 圈发车——回到规划站，带着上一圈的账重新规划（渐进明细）`);
+  } else if (verb === "risk.resolve") {
+    consoleLine(`🌤 风险 ${body.risk} → ${body.status === "closed" ? "已关闭 ✅" : "观察中 👀"}`);
+  } else if (verb === "monitor.sweep") {
+    const evm = body.evm || {};
+    if (evm.skipped) {
+      consoleLine(`👁 EVM：今天已快照（SPI ${evm.spi} · CPI ${evm.cpi}）`);
+    } else {
+      const mark = (evm.breaches || []).length ? ` · 越界：${evm.breaches.join("；")}` : " · 阈值内";
+      consoleLine(`👁 EVM：SPI ${evm.spi} · CPI ${evm.cpi}${mark}`, !(evm.breaches || []).length ? "" : "line--err");
+    }
+    if (body.guard && body.guard.ok) consoleLine("👁 Guard：轨内行驶，无越界改动");
+    else if (body.guard) consoleLine(`👁 Guard：越界 ${(body.guard.violations || []).length} 处 → CR ${body.guard.cr} 立案`, "line--err");
+    consoleLine(`👁 风险：${(body.risks || {}).open ?? 0} 项未决`);
+    const gaps = body.requirements || {};
+    if (gaps.mode === "anchored" && gaps.unanchored > 0)
+      consoleLine(`👁 需求对账：${gaps.unanchored} 个在途任务未锚定工作包（渐进明细没跟上）`, "line--err");
   } else {
     consoleLine(JSON.stringify(body));
   }
@@ -1375,10 +1409,17 @@ function renderWeather(risks) {
     wrap.innerHTML = '<span class="empty">全线晴朗，风险册是空的 🌈 —— EVM 越界 / 门禁红线会自动入险</span>';
     return;
   }
+  const writable = Boolean(uiConfig.approvals_enabled);
   wrap.innerHTML = risks
     .map((r) => {
       const score = r.probability * r.impact;
       const wx = weather(score);
+      const buttons = writable
+        ? `<span class="wx-act">
+            <button class="task-btn" data-risk="${esc(r.id)}" data-rstatus="watching" title="降级为观察">👀</button>
+            <button class="task-btn task-btn--pass" data-risk="${esc(r.id)}" data-rstatus="closed" title="裁决关闭">✓</button>
+          </span>`
+        : "";
       return `
       <div class="wx-row ${wx.cls}">
         <span class="wx-icon">${wx.icon}</span>
@@ -1386,10 +1427,17 @@ function renderWeather(risks) {
         <span class="wx-desc">${esc(r.description)}</span>
         <span class="wx-score">P${r.probability}×I${r.impact}=${score}</span>
         <span class="wx-meta">${esc(r.strategy)} · ${esc(r.owner || "—")}${r.trigger_event_seq != null ? ` · #${r.trigger_event_seq}` : ""}</span>
+        ${buttons}
       </div>`;
     })
     .join("");
 }
+
+document.getElementById("weather").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-risk]");
+  if (!btn) return;
+  callAction("risk.resolve", { risk: btn.dataset.risk, status: btn.dataset.rstatus });
+});
 
 function renderTickets(artifacts) {
   const wrap = document.getElementById("tickets");

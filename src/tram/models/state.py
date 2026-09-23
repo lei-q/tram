@@ -24,6 +24,7 @@ class Phase(enum.StrEnum):
 class ProjectState(BaseModel):
     project_name: str
     phase: Phase = Phase.INITIATING
+    iteration: int = 1  # 环线第几圈——过程组每圈重复一遍，不是走一遍的直线
     baselines: dict[str, str] = Field(default_factory=dict)  # name -> version ref
     tasks: list[TaskRecord] = Field(default_factory=list)
     open_crs: list[str] = Field(default_factory=list)  # CR ids

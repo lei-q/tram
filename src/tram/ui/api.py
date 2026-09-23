@@ -56,6 +56,7 @@ REFRESH_KINDS = {
     "baseline_saved",
     "session_merged",
     "autopilot_step",
+    "risk_resolved",
 }
 
 
@@ -146,6 +147,7 @@ def create_app(
         return {
             "project_name": state.project_name,
             "phase": state.phase.value,
+            "iteration": state.iteration,
             "sandbox": ctx.config.sandbox.value,
             "policy_engine": ctx.config.policy_engine.value,
             "events_count": ctx.events.count(),
@@ -225,6 +227,12 @@ def create_app(
                 for r in state.risks
                 if r.status != RiskStatus.CLOSED
             ],
+            "storm_risks": sum(
+                1
+                for r in state.risks
+                if r.status != RiskStatus.CLOSED and r.probability * r.impact >= 9
+            ),
+            "requirement_gaps": operations.requirement_gaps(ctx),
             "kpi": {
                 "gate_mttr": _mttr_json(mttr_report(events)),
                 "defect_mttr": _mttr_json(defect_mttr(events)),
@@ -290,7 +298,10 @@ def create_app(
     # 调度台动词 → operations 服务。每个动词都是 CLI 同款确定性入口，
     # 这里只做派发与 JSON 化，绝不自带第二套逻辑。
     def _apply_action(verb: str, args: dict, by: str) -> dict:
-        if verb in {"qa.fail", "qa.pass", "baseline.save"} and not by.strip():
+        if (
+            verb in {"qa.fail", "qa.pass", "baseline.save", "lap.next", "risk.resolve"}
+            and not by.strip()
+        ):
             raise HTTPException(422, f"{verb} 要署名：by 不能为空")
         try:
             if verb == "gate.run":
@@ -352,6 +363,14 @@ def create_app(
             if verb == "baseline.save":
                 version = operations.baseline_save(ctx, str(args.get("yaml", "")), by)
                 return {"version": version}
+            if verb == "lap.next":
+                return operations.next_lap(ctx, by)
+            if verb == "monitor.sweep":
+                return operations.monitor_sweep(ctx)
+            if verb == "risk.resolve":
+                return operations.risk_resolve(
+                    ctx, str(args.get("risk", "")), str(args.get("status", "")), by
+                )
             raise HTTPException(400, f"unknown verb: {verb}")
         except HTTPException:
             raise

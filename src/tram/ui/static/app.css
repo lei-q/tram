@@ -854,3 +854,6 @@ h2 {
 .signal, .tram { cursor: pointer; }
 .signal:hover circle { stroke: var(--ink); stroke-width: 2.5; }
 .tram:hover .tram-body { stroke-width: 4.5; }
+
+/* ---- 第二十二/二十三批 · 环线与风险闭环 ---- */
+.wx-act { display: flex; gap: 6px; margin-left: auto; }
