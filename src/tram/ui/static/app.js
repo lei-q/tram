@@ -93,11 +93,7 @@ function buildMap() {
   // 信号灯（阶段门）——线上方，点击重跑
   for (const g of GATES) {
     const group = el("g", { class: "signal", id: `signal-${g.id}`, "data-gate": g.id });
-    group.appendChild(
-      Object.assign(document.createElementNS(SVG_NS, "title"), {
-        textContent: `${g.label} 门禁 —— 点击重跑（gate.run）`,
-      })
-    );
+    group.setAttribute("data-tip", `${g.label} 门禁 —— 点击重跑（gate.run）`);
     el("line", { x1: g.x, y1: TRACK_Y + 8, x2: g.x, y2: TRACK_Y + 30 }, group);
     el("circle", { cx: g.x, cy: TRACK_Y + 40, r: 8.5 }, group);
     el("text", { class: "gate-label", x: g.x, y: TRACK_Y + 62, "text-anchor": "middle" }, group).textContent =
@@ -116,11 +112,7 @@ function buildMap() {
 
   // Trammy 小电车（外层管位移，内层管颠簸动画）——点电车 = 全线运行
   tramEl = el("g", { class: "tram", id: "tram" });
-  tramEl.appendChild(
-    Object.assign(document.createElementNS(SVG_NS, "title"), {
-      textContent: "点 Trammy 全线运行（flow.run）——绿灯推进、红灯必停",
-    })
-  );
+  tramEl.setAttribute("data-tip", "点 Trammy 全线运行（flow.run）——绿灯推进、红灯必停");
   const tramInner = el("g", { class: "tram-inner" }, tramEl);
   const tram = (n, a) => el(n, a, tramInner);
   tram("rect", { class: "tram-body", x: -34, y: -40, width: 68, height: 34, rx: 12 });
@@ -242,11 +234,7 @@ function renderLoopDetail(phaseId, iteration) {
     const pt = pointAt(f);
     const o = outwardAt(f);
     const g = el("g", { class: "sub-node" }, loopDetailEl);
-    g.appendChild(
-      Object.assign(document.createElementNS(SVG_NS, "title"), {
-        textContent: `${phase.label}组 · ${p.area}管理 · ${p.process}`,
-      })
-    );
+    g.setAttribute("data-tip", `${phase.label}组 · ${p.area}管理 · ${p.process}`);
     el("circle", { class: "sub-node-dot", cx: pt.x, cy: pt.y, r: 7 }, g);
     // 标签沿外法线长出，按方位定锚点（左右侧 start/end，上下 middle）
     const anchor = o.x > 0.35 ? "start" : o.x < -0.35 ? "end" : "middle";
@@ -596,6 +584,39 @@ function applyWriteMode() {
   for (const btn of document.querySelectorAll(".dispatch-btn")) btn.disabled = !on;
 }
 
+
+/* 毫秒级浮动提示：原生 <title> 有浏览器级秒延迟，自绘 tip 即时显示 */
+const mapTip = document.createElement("div");
+mapTip.id = "map-tip";
+mapTip.hidden = true;
+document.body.appendChild(mapTip);
+svg.addEventListener("mouseover", (ev) => {
+  const host = ev.target.closest("[data-tip]");
+  if (!host) return;
+  mapTip.textContent = host.getAttribute("data-tip");
+  mapTip.hidden = false;
+});
+svg.addEventListener("mousemove", (ev) => {
+  if (mapTip.hidden) return;
+  const pad = 14;
+  mapTip.style.left = Math.min(ev.clientX + pad, window.innerWidth - mapTip.offsetWidth - 8) + "px";
+  mapTip.style.top = Math.max(ev.clientY - mapTip.offsetHeight - 8, 8) + "px";
+});
+svg.addEventListener("mouseout", (ev) => {
+  if (!ev.relatedTarget || !ev.relatedTarget.closest || !ev.relatedTarget.closest("[data-tip]")) {
+    mapTip.hidden = true;
+  }
+});
+svg.addEventListener("mouseleave", () => {
+  mapTip.hidden = true;
+});
+
+/* 行车记录仪有新记录：高亮底舱 tab 并自动切换过来 */
+function switchDockTab(paneId) {
+  for (const t of document.querySelectorAll(".dock-tab")) t.classList.toggle("is-active", t.dataset.pane === paneId);
+  for (const p of document.querySelectorAll(".dock-pane")) p.hidden = p.id !== paneId;
+}
+
 function consoleLine(text, cls = "") {
   const box = document.getElementById("console");
   const line = document.createElement("div");
@@ -605,6 +626,17 @@ function consoleLine(text, cls = "") {
   line.querySelector(".line-msg").textContent = text;
   box.appendChild(line);
   box.scrollTop = box.scrollHeight;
+  // 有新记录：高亮行车记录 tab 并自动切换过来（司机刚点了按钮，结果就该立刻看见）
+  const pane = document.getElementById("dock-events");
+  if (pane && pane.hidden) {
+    switchDockTab("dock-events");
+    const tab = document.querySelector('.dock-tab[data-pane="dock-events"]');
+    if (tab) {
+      tab.classList.remove("is-attention");
+      void tab.offsetWidth;
+      tab.classList.add("is-attention");
+    }
+  }
   while (box.children.length > 200) box.removeChild(box.firstChild);
 }
 
@@ -1228,6 +1260,9 @@ function appendChatLine(line) {
   } else if (line.k === "text") {
     div.className = "chat-row chat-row--engine";
     div.innerHTML = '<span class="chat-who">🚋</span><span class="chat-bubble"></span>';
+  } else if (line.k === "think") {
+    div.className = "chat-row chat-row--think";
+    div.innerHTML = '<span class="chat-who">💭</span><span class="chat-bubble"></span>';
   } else if (line.k === "tool") {
     div.className = "chat-row chat-row--tool";
     div.innerHTML = `<span class="chat-who">🔧</span><span class="chat-bubble">${esc(line.name)}</span>`;
@@ -1596,8 +1631,7 @@ async function refresh() {
 document.querySelector(".dock-tabs").addEventListener("click", (ev) => {
   const tab = ev.target.closest(".dock-tab");
   if (!tab) return;
-  for (const t of document.querySelectorAll(".dock-tab")) t.classList.toggle("is-active", t === tab);
-  for (const p of document.querySelectorAll(".dock-pane")) p.hidden = p.id !== tab.dataset.pane;
+  switchDockTab(tab.dataset.pane);
 });
 
 async function boot() {

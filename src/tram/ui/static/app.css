@@ -962,3 +962,36 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .scenery .cloud { animation: none; }
 }
+
+/* ---- 第二十八批 · 即时提示 / 思考流 / 记录高亮 ---- */
+#map-tip {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 10px;
+  border-radius: 7px;
+  max-width: 280px;
+  opacity: 0.96;
+  transition: opacity 0.05s ease;
+  box-shadow: var(--shadow);
+}
+.chat-row--think { opacity: 0.62; }
+.chat-row--think .chat-who { font-size: 11px; }
+.chat-row--think .chat-bubble {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 2px 8px;
+}
+.dock-tab.is-attention { animation: tabflash 1.1s ease 2; }
+@keyframes tabflash {
+  50% { background: color-mix(in srgb, var(--pending) 40%, var(--card)); color: var(--ink); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-tab.is-attention { animation: none; }
+}

@@ -145,6 +145,8 @@ CLI (Typer) ─→ TramContext(repo/config/state/events/git)
 
 **已完成（第二十七批：领航员改造）**：护航者纲领的彻底兑现——**删除自动驾驶**（它替司机开票、孵整改会话、并线，是抢方向盘），换上**领航员**（`tram/navigation.py`）：纯只读的确定性清单——扫基线审批/CR/工件（G0/G1 检查项）/任务册/EVM 节拍/风暴风险/需求对账，吐出有序「建议动作」（approve-baseline / artifact.generate / chat / monitor.sweep / risk.resolve / anchor / flow.run / G3-or-下一圈），每条带「去哪点」指引；**零副作用**——不跑门禁、不写状态、不发事件，执行永远是驾驶员的手（审计从点击那一刻才开始）。CLI `tram navigate`；API `GET /api/navigate`（只读端点，无需写模式）；UI 🤖 换 🧭 领航按钮（console 逐条打建议）。route_reasons 决策表与 Autopilot/AUTOPILOT_STEP 事件随模块删除（枚举保留兼容旧事件流）。测试教训：字符串拼接改 API 时切掉了 /api/file 与 GET /api/chat/sessions——恢复了，以后改 API 用精确 Edit 不用 index 切割。
 
+**已完成（第二十八批：即时提示与实时思考）**：(1) **毫秒级提示**：SVG 原生 `<title>` 是浏览器级秒延迟且不可调——全部换成 `data-tip` + 自绘浮动 tip（mouseover 即显、mousemove 跟随、防溢屏钳位），信号灯/Trammy/子过程节点三处。(2) **实时思考过程**：claude 加 `--include-partial-messages` 拿词级 `thinking_delta` 增量流；`_tap` 聚合缓冲（`THINK_FLUSH_CHARS=200`：攒一截或块结束再出一行，防逐词刷屏、一字不丢），行型 `k=think`（💭 淡斜体样式）进 SSE 与聊天历史；fold_stream 对 stream_event 天然免疫（只认 assistant/result）。(3) **行车记录自动切换**：`consoleLine` 有新记录且行车记录 tab 不在前台时，自动 `switchDockTab` 切换过来 + tab 蜜橘闪两下（`is-attention`，respect reduced-motion）——司机刚点了按钮，结果就该立刻看见。
+
 **后续批次（UI 全功能化路线）**：
 - 拆分触发点：文件/会话模块进主包时 app.js 拆 ES modules（零构建不变）。
 

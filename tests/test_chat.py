@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from tram.adapters.base import RunnerUnavailableError, RunResult
 from tram.adapters.claude_code import ClaudeCodeRunner
 from tram.adapters.fake import FakeRunner
-from tram.chat import ChatService
+from tram.chat import ChatJob, ChatService
 from tram.context import load_context
 from tram.cr_store import CRStore
 from tram.models.events import EventKind
@@ -465,6 +465,38 @@ def test_knowledge_collector_writes_three_ledgers(git_repo):
     _s2, job2 = svc2.send_message(None, "加依赖", by="lay")
     risks = (knowledge / "risks.md").read_text(encoding="utf-8")
     assert job2.cr in risks and "Intent Guard" in risks
+
+
+def test_thinking_stream_aggregates_into_lines(git_repo):
+    """思考增量流：词级 thinking_delta 聚合成行（攒 200 字或块结束冲出），不逐词刷屏."""
+    svc, _ctx = _service(git_repo, {})
+
+    def think_events():
+        for i in range(30):
+            yield {
+                "type": "stream_event",
+                "event": {"delta": {"type": "thinking_delta", "thinking": f"思考片段{i}。"}},
+            }
+        yield {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "想完了"}]},
+        }
+        yield {"type": "result", "subtype": "success", "session_id": "s", "result": "done"}
+
+    job = ChatJob(id="job-t", session_id="chat-0001")
+    list(svc._tap(job, think_events()))  # noqa: SLF001 - 直驱 _tap
+
+    thinks = [ln for ln in job.lines if ln["k"] == "think"]
+    total = sum(len(ln["text"]) for ln in thinks)
+    assert total == sum(len(f"思考片段{i}。") for i in range(30))  # 一字不丢
+    assert len(thinks) < 30  # 聚合过，不是逐词一行
+    assert any("思考片段0" in ln["text"] for ln in thinks)
+    assert job.lines[-1]["k"] == "result"  # 尾巴也冲掉了，终态行照常
+
+
+def test_claude_cmd_includes_partial_messages():
+    cmd = ClaudeCodeRunner().build_cmd(TaskSpec(id="T-1", prompt="p"))
+    assert "--include-partial-messages" in cmd
 
 
 def test_close_dirty_session_keeps_worktree(git_repo):

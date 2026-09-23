@@ -58,6 +58,10 @@ class ChatJob:
     commit: str | None = None
     cr: str | None = None
     stop: threading.Event = field(default_factory=threading.Event)
+    think_buf: str = field(default="", repr=False)  # 思考增量聚合缓冲（不进快照）
+
+
+THINK_FLUSH_CHARS = 200  # 思考流聚合粒度：攒够一截再出一行，防逐词刷屏
 
 
 def ui_line(event: dict[str, Any]) -> dict | None:
@@ -643,15 +647,37 @@ class ChatService:
 
     def _tap(self, job: ChatJob, events):
         for ev in events:
+            self._tap_think(job, ev)
             got = ui_line(ev)
             if got:
                 lines = got if isinstance(got, list) else [got]  # ui_line 返回 list 或单 dict
-                with self._lock:
-                    if len(job.lines) < MAX_JOB_LINES:
-                        job.lines.extend(lines)
-                for line in lines:  # 聊天历史同步落盘（刷新不丢）
-                    self.append_log(job.session_id, line)
+                self._emit_lines(job, lines)
             yield ev
+
+    def _tap_think(self, job: ChatJob, ev: dict) -> None:
+        """思考增量流（claude --include-partial-messages）：聚合缓冲，攒一截出一行.
+
+        原始 stream_event 的 thinking_delta 是词级碎片，直接上屏会刷屏；
+        攒到 THINK_FLUSH_CHARS 或块结束（非 stream_event 事件到达）再吐。
+        """
+        if ev.get("type") == "stream_event":
+            delta = (ev.get("event") or {}).get("delta") or {}
+            if delta.get("type") == "thinking_delta":
+                job.think_buf += str(delta.get("thinking") or "")
+                if len(job.think_buf) >= THINK_FLUSH_CHARS:
+                    self._emit_lines(job, [{"k": "think", "text": job.think_buf[:300]}])
+                    job.think_buf = ""
+                return
+        if job.think_buf:  # 块结束（assistant/result/任何整事件）：冲掉尾巴
+            self._emit_lines(job, [{"k": "think", "text": job.think_buf[:300]}])
+            job.think_buf = ""
+
+    def _emit_lines(self, job: ChatJob, lines: list[dict]) -> None:
+        with self._lock:
+            if len(job.lines) < MAX_JOB_LINES:
+                job.lines.extend(lines)
+        for line in lines:  # 聊天历史同步落盘（刷新不丢）
+            self.append_log(job.session_id, line)
 
     def _finish(
         self,

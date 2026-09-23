@@ -39,6 +39,7 @@ class ClaudeCodeRunner:
             "--output-format",
             "stream-json",
             "--verbose",
+            "--include-partial-messages",  # 思考增量流：会话车厢实时显示思考过程
         ]
         if task.resume and task.session_id:
             cmd += ["--resume", task.session_id]
