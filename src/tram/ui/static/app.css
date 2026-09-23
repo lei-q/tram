@@ -909,3 +909,56 @@ h2 {
   .track-flow { animation: none; }
   .sub-node--active .sub-node-dot { animation: none; }
 }
+
+/* ---- 第二十五批 · 风景双轨图 ---- */
+/* 沿途风景：永远垫底，不挡操作 */
+.scenery { pointer-events: none; }
+.scenery .sun { fill: color-mix(in srgb, var(--st-init) 60%, var(--paper)); }
+.scenery .cloud ellipse { fill: color-mix(in srgb, var(--card) 75%, transparent); }
+.scenery .cloud { animation: drift 9s ease-in-out infinite alternate; }
+.scenery .cloud:nth-of-type(2) { animation-duration: 12s; }
+.scenery .cloud:nth-of-type(3) { animation-duration: 7s; }
+@keyframes drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(10px); }
+}
+.hill--back { fill: color-mix(in srgb, var(--st-plan) 30%, var(--paper)); }
+.hill--front { fill: color-mix(in srgb, var(--st-mon) 26%, var(--paper)); }
+.tree line { stroke: color-mix(in srgb, var(--ink) 45%, var(--paper)); stroke-width: 4; stroke-linecap: round; }
+.tree circle { fill: color-mix(in srgb, var(--ok) 40%, var(--paper)); }
+
+/* 直线主线：里程标（独立元素版） */
+.milestone { stroke: var(--track); stroke-width: 2.5; }
+.milestone-text {
+  fill: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+}
+.station-label { fill: var(--ink); font-size: 15px; font-weight: 800; text-anchor: middle; }
+
+/* 细节环线：环心阶段名 + 子过程节点（标签常显，整圈均布不重叠） */
+.loop-phase { font-size: 26px; font-weight: 800; }
+.loop-lap { fill: var(--ink-soft); font-size: 12.5px; font-weight: 700; }
+.loop-track { stroke-width: 7; }
+.sub-node-dot { fill: var(--pending); stroke: var(--card); stroke-width: 2.5; }
+.sub-node-badge {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 3;
+}
+.sub-node-label {
+  fill: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 3;
+}
+.sub-node:hover .sub-node-dot { fill: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  .scenery .cloud { animation: none; }
+}

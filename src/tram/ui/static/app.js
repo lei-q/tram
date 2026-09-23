@@ -3,38 +3,41 @@
    都派发到与 CLI 相同的服务层——每个按钮都长在铁轨上。 */
 "use strict";
 
-/* 环线线路图：赛道形闭环，站点/门禁/子过程节点/里程标沿环用 getPointAtLength 落位。
-   过程组每圈重复一遍（渐进明细）——轨道是环的，Trammy 一圈圈开。 */
+/* 双轨线路图：上半直线 = 项目主线（过程组 + 门禁 + 里程标 + Trammy）；
+   下半环线 = 当前阶段的放大镜（该阶段的知识域子过程铺满一圈，环心是阶段名）。
+   过程组每圈重复（渐进明细）——环线的方向动画一直在转。 */
 const PHASES = [
-  { id: "initiating", label: "启动", css: "var(--st-init)", f: 0.0 },
-  { id: "planning", label: "规划", css: "var(--st-plan)", f: 0.2 },
-  { id: "executing", label: "执行", css: "var(--st-exec)", f: 0.4 },
-  { id: "monitoring", label: "监控", css: "var(--st-mon)", f: 0.6 },
-  { id: "closing", label: "收尾", css: "var(--st-close)", f: 0.8 },
+  { id: "initiating", label: "启动", css: "var(--st-init)", x: 130 },
+  { id: "planning", label: "规划", css: "var(--st-plan)", x: 300 },
+  { id: "executing", label: "执行", css: "var(--st-exec)", x: 470 },
+  { id: "monitoring", label: "监控", css: "var(--st-mon)", x: 640 },
+  { id: "closing", label: "收尾", css: "var(--st-close)", x: 810 },
 ];
 const GATES = [
-  { id: "g0_charter_gate", label: "G0", f: 0.1 },
-  { id: "g1_planning_gate", label: "G1", f: 0.3 },
-  { id: "g2_quality_gate", label: "G2", f: 0.5 },
-  { id: "g3_closing_gate", label: "G3", f: 0.7 },
+  { id: "g0_charter_gate", label: "G0", x: 215 },
+  { id: "g1_planning_gate", label: "G1", x: 385 },
+  { id: "g2_quality_gate", label: "G2", x: 555 },
+  { id: "g3_closing_gate", label: "G3", x: 725 },
 ];
-const PHASE_F = Object.fromEntries(PHASES.map((p) => [p.id, p.f]));
-PHASE_F.done = 0.98;
+const TRACK_Y = 110;
+const PHASE_X = Object.fromEntries(PHASES.map((p) => [p.id, p.x]));
+PHASE_X.done = 845;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const svg = document.getElementById("route-map");
 let tramEl;
 let branchEl;
 let loopPath;
+let loopDetailEl;
 const signalEls = {};
-const subNodeEls = {}; // phase id -> [节点组]，高亮当前阶段的子过程用
+let DOMAIN_DATA = null; // /api/domains 词表缓存（环线细节渲染用）
 
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* 环线几何：绕环一周的分数位置 -> 坐标 / 外法线（标签、灯、Trammy 都往外长） */
+/* 细节环线几何：绕环一周的分数位置 -> 坐标 / 外法线（标签往外长） */
 const LOOP_D =
-  "M 120 130 H 800 A 62 62 0 0 1 862 192 V 288 A 62 62 0 0 1 800 350 H 120 A 62 62 0 0 1 58 288 V 192 A 62 62 0 0 1 120 130 Z";
-const LOOP_CENTER = { x: 460, y: 240 };
+  "M 150 205 H 770 A 55 55 0 0 1 825 260 V 340 A 55 55 0 0 1 770 395 H 150 A 55 55 0 0 1 95 340 V 260 A 55 55 0 0 1 150 205 Z";
+const LOOP_CENTER = { x: 460, y: 300 };
 
 function pointAt(f) {
   const len = loopPath.getTotalLength();
@@ -64,80 +67,52 @@ function el(name, attrs = {}, parent = svg) {
 }
 
 function buildMap() {
-  // 环线主线（底层实体轨道）+ 行进方向层（流动虚线，顺时针 marching）
-  el("path", { class: "track", d: LOOP_D });
-  el("path", { class: "track-flow", d: LOOP_D });
-  loopPath = svg.querySelector(".track");
+  buildScenery();
 
-  // 行进方向箭头（▸ 沿切线转角）——方向感的静态冗余，动画之外也看得懂
-  for (const f of [0.05, 0.25, 0.45, 0.65, 0.85]) {
-    const p = pointAt(f);
-    const n = outwardAt(f);
-    el("text", {
-      class: "track-arrow",
-      x: p.x + n.x * 14,
-      y: p.y + n.y * 14 + 4,
-      transform: `rotate(${(tangentAt(f) * 180) / Math.PI} ${p.x + n.x * 14} ${p.y + n.y * 14})`,
-    }).textContent = "▸";
+  // ---------- 直线主线：过程组 + 门禁 + 里程标 ----------
+  el("path", { class: "track", d: `M 60 ${TRACK_Y} H 860` });
+
+  // 里程标 K0-K7：每段站间两根小立柱（与站、门都错开 40+px）
+  let k = 0;
+  for (let i = 0; i < PHASES.length - 1; i++) {
+    for (const frac of [0.25, 0.75]) {
+      const x = PHASES[i].x + frac * (PHASES[i + 1].x - PHASES[i].x);
+      el("line", { class: "milestone", x1: x, y1: TRACK_Y + 14, x2: x, y2: TRACK_Y + 26 });
+      el("text", { class: "milestone-text", x, y: TRACK_Y + 40, "text-anchor": "middle" }).textContent = `K${k}`;
+      k += 1;
+    }
   }
 
-  // 里程标：8 根外立小柱 K0-K7（环线一圈的里程刻度）
-  for (let k = 0; k < 8; k++) {
-    const f = k / 8 + 1 / 16;
-    const p = pointAt(f);
-    const n = outwardAt(f);
-    const g = el("g", { class: "milestone" });
-    el("line", { x1: p.x, y1: p.y, x2: p.x + n.x * 16, y2: p.y + n.y * 16 }, g);
-    el(
-      "text",
-      { x: p.x + n.x * 30, y: p.y + n.y * 30 + 3, "text-anchor": "middle" },
-      g
-    ).textContent = `K${k}`;
-  }
-
-  // 车站（过程组）——沿环落位，标签向外
+  // 车站（过程组）
   for (const s of PHASES) {
-    const p = pointAt(s.f);
-    const n = outwardAt(s.f);
-    el("circle", { cx: p.x, cy: p.y, r: 16, fill: s.css, stroke: "var(--card)", "stroke-width": 4 });
-    el("text", {
-      class: "station-label",
-      x: p.x + n.x * 42,
-      y: p.y + n.y * 42 + 4,
-      "text-anchor": "middle",
-    }).textContent = s.label;
+    el("circle", { cx: s.x, cy: TRACK_Y, r: 15, fill: s.css, stroke: "var(--card)", "stroke-width": 4 });
+    el("text", { class: "station-label", x: s.x, y: TRACK_Y - 26, "text-anchor": "middle" }).textContent =
+      s.label;
   }
 
-  // 信号灯（阶段门）——轨道点外挑，点击重跑
+  // 信号灯（阶段门）——线上方，点击重跑
   for (const g of GATES) {
-    const p = pointAt(g.f);
-    const n = outwardAt(g.f);
     const group = el("g", { class: "signal", id: `signal-${g.id}`, "data-gate": g.id });
     group.appendChild(
       Object.assign(document.createElementNS(SVG_NS, "title"), {
         textContent: `${g.label} 门禁 —— 点击重跑（gate.run）`,
       })
     );
-    el("line", { x1: p.x, y1: p.y, x2: p.x + n.x * 26, y2: p.y + n.y * 26 }, group);
-    el("circle", { cx: p.x + n.x * 36, cy: p.y + n.y * 36, r: 8.5 }, group);
-    el(
-      "text",
-      { x: p.x + n.x * 52, y: p.y + n.y * 52 + 3, "text-anchor": "middle" },
-      group
-    ).textContent = g.label;
+    el("line", { x1: g.x, y1: TRACK_Y + 8, x2: g.x, y2: TRACK_Y + 30 }, group);
+    el("circle", { cx: g.x, cy: TRACK_Y + 40, r: 8.5 }, group);
+    el("text", { class: "gate-label", x: g.x, y: TRACK_Y + 62, "text-anchor": "middle" }, group).textContent =
+      g.label;
     signalEls[g.id] = group;
   }
 
-  // 支线（CR 绕行道岔）：执行 → 监控的环内捷径
-  const bFrom = pointAt(0.42);
-  const bTo = pointAt(0.58);
+  // 支线（CR 绕行道岔）：执行 → 监控 的线下浅弧
   branchEl = el("path", {
     class: "branch",
-    d: `M ${bFrom.x} ${bFrom.y} Q ${LOOP_CENTER.x} ${LOOP_CENTER.y + 30} ${bTo.x} ${bTo.y}`,
+    d: `M ${PHASE_X.executing} ${TRACK_Y} Q 555 ${TRACK_Y + 78} ${PHASE_X.monitoring} ${TRACK_Y}`,
     id: "branch",
   });
-  el("text", { class: "branch-label", x: LOOP_CENTER.x - 52, y: LOOP_CENTER.y - 24, id: "branch-label" }).textContent = "";
-  el("circle", { cx: LOOP_CENTER.x - 52, cy: LOOP_CENTER.y - 8, r: 0, fill: "var(--pending)", id: "branch-bubble" });
+  el("text", { class: "branch-label", x: 555, y: TRACK_Y + 52, "text-anchor": "middle", id: "branch-label" }).textContent = "";
+  el("circle", { cx: 555, cy: TRACK_Y + 66, r: 0, fill: "var(--pending)", id: "branch-bubble" });
 
   // Trammy 小电车（外层管位移，内层管颠簸动画）——点电车 = 全线运行
   tramEl = el("g", { class: "tram", id: "tram" });
@@ -160,6 +135,12 @@ function buildMap() {
   el("path", { d: "M22 -17 q4 4 8 0", fill: "none", "stroke-width": 2 }, face);
   tram("text", { class: "zzz", x: 40, y: -42 }).textContent = "zzz";
   moveTram("initiating");
+
+  // ---------- 细节环线：当前阶段的放大镜（内容随 renderState 换装） ----------
+  el("path", { class: "track loop-track", d: LOOP_D });
+  el("path", { class: "track-flow", d: LOOP_D });
+  loopPath = svg.querySelector(".loop-track");
+  loopDetailEl = el("g", { id: "loop-detail" });
 
   // 动画收尾：一次性动画结束后摘掉类，方便下次重放
   tramEl.addEventListener("animationend", () => tramEl.classList.remove("is-depart", "is-cheer"));
@@ -186,54 +167,124 @@ function buildMap() {
   });
 }
 
-function moveTram(phase) {
-  const f = PHASE_F[phase] ?? PHASE_F.initiating;
-  const p = pointAt(f);
-  const n = outwardAt(f);
-  tramEl.setAttribute("transform", `translate(${p.x + n.x * 34} ${p.y + n.y * 34})`);
+/* 沿途风景：淡雅卡通背景（软云/远山/棒棒糖树/暖阳），永远垫底不挡操作 */
+function buildScenery() {
+  const g = el("g", { class: "scenery" });
+  el("circle", { cx: 838, cy: 64, r: 24, class: "sun" }, g);
+  cloud(140, 62, g);
+  cloud(420, 46, g);
+  cloud(664, 74, g);
+  el(
+    "path",
+    {
+      class: "hill hill--back",
+      d: "M -20 468 Q 180 336 420 452 T 940 446 L 940 545 L -20 545 Z",
+    },
+    g
+  );
+  el(
+    "path",
+    {
+      class: "hill hill--front",
+      d: "M -20 502 Q 300 392 620 494 T 940 504 L 940 545 L -20 545 Z",
+    },
+    g
+  );
+  tree(76, 176, g);
+  tree(874, 158, g);
+  tree(44, 434, g);
+  tree(890, 424, g);
 }
 
-/* 子过程节点上轨道：站→门之间排珠；当前阶段的珠子加粗发光并显名 */
-function buildDomainRail(data) {
-  const sub = data.subprocesses || {};
-  for (const s of PHASES) {
-    const procs = sub[s.id] || [];
-    const gateF = s.f + 0.1; // 下一座门在 0.1 之后
-    subNodeEls[s.id] = [];
-    procs.forEach((p, i) => {
-      const f = s.f + 0.1 * ((i + 1) / (procs.length + 1));
-      const pt = pointAt(f);
-      const n = outwardAt(f);
-      const g = el("g", { class: "sub-node", "data-phase": s.id });
-      g.appendChild(
-        Object.assign(document.createElementNS(SVG_NS, "title"), {
-          textContent: `${s.label}组 · ${p.area}管理 · ${p.process}`,
-        })
-      );
-      el("circle", { class: "sub-node-dot", cx: pt.x, cy: pt.y, r: 3.5 }, g);
-      el("text", { class: "sub-node-label", x: pt.x + n.x * 15, y: pt.y + n.y * 15 + 3 }, g).textContent =
-        p.process;
-      subNodeEls[s.id].push(g);
-    });
+function cloud(x, y, parent) {
+  const g = el("g", { class: "cloud" }, parent);
+  el("ellipse", { cx: 0, cy: 0, rx: 26, ry: 14 }, g);
+  el("ellipse", { cx: 20, cy: 5, rx: 20, ry: 11 }, g);
+  el("ellipse", { cx: -20, cy: 5, rx: 18, ry: 10 }, g);
+  g.setAttribute("transform", `translate(${x} ${y})`);
+}
+
+function tree(x, y, parent) {
+  const g = el("g", { class: "tree" }, parent);
+  el("line", { x1: 0, y1: 0, x2: 0, y2: 22 }, g);
+  el("circle", { cx: 0, cy: -8, r: 15 }, g);
+  g.setAttribute("transform", `translate(${x} ${y})`);
+}
+
+function moveTram(phase) {
+  const x = PHASE_X[phase] ?? PHASE_X.initiating;
+  tramEl.setAttribute("transform", `translate(${x} ${TRACK_Y - 30})`);
+}
+
+/* 细节环线换装：当前阶段的知识域子过程铺满一圈——每颗节点独享 ~300px 弧长，标签永不重叠 */
+function renderLoopDetail(phaseId, iteration) {
+  if (!loopDetailEl || !DOMAIN_DATA) return;
+  loopDetailEl.innerHTML = "";
+  const phase = PHASES.find((p) => p.id === phaseId) || PHASES[0];
+  const procs = (DOMAIN_DATA.subprocesses || {})[phase.id] || [];
+
+  // 环心：阶段名 + 第 N 圈
+  el(
+    "text",
+    { class: "loop-phase", x: LOOP_CENTER.x, y: LOOP_CENTER.y - 6, "text-anchor": "middle", fill: phase.css },
+    loopDetailEl
+  ).textContent = `${phase.label}阶段`;
+  el(
+    "text",
+    { class: "loop-lap", x: LOOP_CENTER.x, y: LOOP_CENTER.y + 22, "text-anchor": "middle" },
+    loopDetailEl
+  ).textContent = iteration > 1 ? `环线 · 第 ${iteration} 圈` : "知识域子过程";
+
+  // 子过程节点均布整圈
+  const n = Math.max(procs.length, 1);
+  procs.forEach((p, i) => {
+    const f = (i + 0.5) / n;
+    const pt = pointAt(f);
+    const o = outwardAt(f);
+    const g = el("g", { class: "sub-node" }, loopDetailEl);
+    g.appendChild(
+      Object.assign(document.createElementNS(SVG_NS, "title"), {
+        textContent: `${phase.label}组 · ${p.area}管理 · ${p.process}`,
+      })
+    );
+    el("circle", { class: "sub-node-dot", cx: pt.x, cy: pt.y, r: 7 }, g);
+    // 标签沿外法线长出，按方位定锚点（左右侧 start/end，上下 middle）
+    const anchor = o.x > 0.35 ? "start" : o.x < -0.35 ? "end" : "middle";
+    const lx = pt.x + o.x * 26;
+    const ly = pt.y + o.y * 26 + 4;
+    el("text", { class: "sub-node-badge", x: lx, y: ly, "text-anchor": anchor }, g).textContent = p.badge;
+    const badgeShift = anchor === "end" ? -14 : anchor === "start" ? 14 : 0;
+    el(
+      "text",
+      { class: "sub-node-label", x: lx + badgeShift, y: ly, "text-anchor": anchor },
+      g
+    ).textContent = p.process;
+  });
+
+  // 方向箭头（▸ 沿切线转角）
+  for (const f of [0.12, 0.37, 0.62, 0.87]) {
+    const p = pointAt(f);
+    const o = outwardAt(f);
+    el("text", {
+      class: "track-arrow",
+      x: p.x + o.x * 13,
+      y: p.y + o.y * 13 + 4,
+      transform: `rotate(${(tangentAt(f) * 180) / Math.PI} ${p.x + o.x * 13} ${p.y + o.y * 13})`,
+    }).textContent = "▸";
   }
-  // 图例：十大知识域一行扫全（环线下方）
-  const areas = data.areas || [];
-  const legendY = 408;
+}
+
+/* 十大知识域图例（环线下方一行扫全） */
+function renderLegend() {
+  if (!DOMAIN_DATA) return;
+  const areas = DOMAIN_DATA.areas || [];
   areas.forEach((a, i) => {
     const g = el("g", { class: "ka-legend-item" });
     const x = 66 + i * ((920 - 110) / Math.max(areas.length - 1, 1));
-    el("rect", { class: "ka-legend-badge", x: x - 8, y: legendY - 10, width: 17, height: 15, rx: 5 }, g);
-    el("text", { class: "ka-legend-badge-text", x, y: legendY + 1, "text-anchor": "middle" }, g).textContent =
-      a.badge;
-    el("text", { class: "ka-legend-name", x: x + 14, y: legendY + 1 }, g).textContent = a.name;
+    el("rect", { class: "ka-legend-badge", x: x - 8, y: 462, width: 17, height: 15, rx: 5 }, g);
+    el("text", { class: "ka-legend-badge-text", x, y: 473, "text-anchor": "middle" }, g).textContent = a.badge;
+    el("text", { class: "ka-legend-name", x: x + 14, y: 473 }, g).textContent = a.name;
   });
-}
-
-/* 高亮当前阶段的子过程：珠子放大发光、名字浮出；其余收暗 */
-function highlightSubNodes(phaseId) {
-  for (const [pid, nodes] of Object.entries(subNodeEls)) {
-    for (const node of nodes) node.classList.toggle("sub-node--active", pid === phaseId);
-  }
 }
 
 function setSignal(gateId, status) {
@@ -281,7 +332,7 @@ function renderState(state) {
   prevPhase = state.phase;
 
   moveTram(state.phase);
-  highlightSubNodes(state.phase);
+  renderLoopDetail(state.phase, state.iteration);
   tramEl.classList.toggle("is-waiting", !!state.open_crs.length);
   tramEl.classList.toggle("is-blocked", state.tasks.blocked > 0);
 
@@ -1573,8 +1624,10 @@ document.querySelector(".dock-tabs").addEventListener("click", (ev) => {
 async function boot() {
   buildMap();
   try {
-    // 十大知识域子过程轨道：词表来自服务层 /api/domains（与文件归属、会话前导同一份）
-    buildDomainRail(await fetch("/api/domains").then((r) => r.json()));
+    // 十大知识域词表：服务层 /api/domains（与文件归属、会话前导同一份）
+    DOMAIN_DATA = await fetch("/api/domains").then((r) => r.json());
+    renderLegend();
+    renderLoopDetail("initiating", 1); // 真值随首个 state 刷新换装
   } catch (err) {
     console.error("domains failed", err); // 词表拿不到也不挡地图主线
   }
