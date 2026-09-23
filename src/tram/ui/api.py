@@ -57,6 +57,7 @@ REFRESH_KINDS = {
     "session_merged",
     "autopilot_step",
     "risk_resolved",
+    "knowledge_distilled",
 }
 
 
@@ -371,6 +372,13 @@ def create_app(
                 return operations.risk_resolve(
                     ctx, str(args.get("risk", "")), str(args.get("status", "")), by
                 )
+            if verb == "knowledge.distill":
+                from tram import knowledge as kb_mod
+
+                out = kb_mod.distill(ctx, str(args.get("engine") or "claude"), by)
+                if out.get("skipped"):
+                    raise HTTPException(409, f"引擎不可用：{out['skipped']}")
+                return out
             raise HTTPException(400, f"unknown verb: {verb}")
         except HTTPException:
             raise

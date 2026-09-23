@@ -296,6 +296,13 @@ tram risk list
 tram risk resolve r-guard-cr-0001 --status closed --by 你的名字
 ```
 
+### tram knowledge
+**目的**：护航知识库——把对话与变更蒸馏成各过程组项目文件（章程/管理计划/基准/风险登记册…），下轮对话自动携带摘要。收车时也会自动提炼（后台跑，不阻塞收车）。
+```bash
+tram knowledge --engine claude --by 你的名字   # UI 调度条「📚 提炼知识」同款
+```
+文件落 `.tram/knowledge/docs/<过程组>/`，白名单管控（引擎只能写既定文件名）；每轮对话跑完自动刷新监控组文件（变更日志/进度报告）。
+
 ### tram ui
 **目的**：启动驾驶舱 UI。**默认只读**；`--approve` 开写模式。
 ```bash

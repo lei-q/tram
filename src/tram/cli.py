@@ -832,6 +832,31 @@ def risk_resolve_cmd(
 
 
 @app.command()
+def knowledge(
+    engine: Annotated[str, typer.Option(help="提炼引擎 fake|claude|openhands")] = "claude",
+    by: Annotated[str, typer.Option(help="司机署名")] = "driver",
+) -> None:
+    """护航知识库：把对话与变更蒸馏成项目文件（章程/管理计划/基准/风险登记册…）."""
+    from tram import knowledge as kb_mod
+
+    try:
+        ctx = load_context()
+        out = kb_mod.distill(ctx, engine, by)
+    except Exception as exc:  # noqa: BLE001
+        _fail(exc)
+        return
+    if out.get("skipped"):
+        console.print(f"[yellow]引擎不可用，已跳过：{out['skipped']}[/yellow]")
+        return
+    if not out["files"]:
+        console.print("[dim]没有新材料可提炼（先在会话车厢聊几轮）[/dim]")
+        return
+    for name in out["files"]:
+        console.print(f"📚 {name} ✅")
+    console.print("[green]知识库已更新——下轮对话自动携带摘要[/green]")
+
+
+@app.command()
 def lap(
     by: Annotated[str, typer.Option(help="司机署名")] = "driver",
 ) -> None:

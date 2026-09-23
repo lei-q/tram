@@ -30,6 +30,7 @@ class EventKind(enum.StrEnum):
     SESSION_MERGED = "session_merged"
     AUTOPILOT_STEP = "autopilot_step"
     RISK_RESOLVED = "risk_resolved"
+    KNOWLEDGE_DISTILLED = "knowledge_distilled"
 
 
 class TramEvent(BaseModel):

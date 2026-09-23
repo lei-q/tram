@@ -653,6 +653,13 @@ function narrate(verb, body) {
     consoleLine(`↺ 第 ${body.iteration} 圈发车——回到规划站，带着上一圈的账重新规划（渐进明细）`);
   } else if (verb === "risk.resolve") {
     consoleLine(`🌤 风险 ${body.risk} → ${body.status === "closed" ? "已关闭 ✅" : "观察中 👀"}`);
+  } else if (verb === "knowledge.distill") {
+    if ((body.files || []).length) {
+      for (const f of body.files) consoleLine(`📚 ${f} 已更新`);
+      consoleLine("知识库已更新——下轮对话自动携带摘要");
+    } else {
+      consoleLine("📚 没有新材料可提炼（先在会话车厢聊几轮）");
+    }
   } else if (verb === "monitor.sweep") {
     const evm = body.evm || {};
     if (evm.skipped) {

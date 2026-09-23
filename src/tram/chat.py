@@ -26,6 +26,7 @@ from tram.context import TramContext, load_context
 from tram.cr_store import CRStore
 from tram.governance.domains import classify_path
 from tram.governance.intent_guard import IntentGuard, classify_violations, path_matches
+from tram.knowledge import digest as knowledge_digest
 from tram.models.events import EventKind
 from tram.models.task import TaskRecord, TaskSpec, TaskStatus
 from tram.sandbox.worktree import TRAM_IDENTITY, WorktreeSession
@@ -215,7 +216,26 @@ class ChatService:
                 record.status = TaskStatus.DONE
                 record.spent_points = record.est_points
                 self.ctx.state_store.save(state)
-        return self.get_session(session_id)  # type: ignore[return-value]
+        # 收车即提炼：把这段对话蒸馏进项目文件（护航知识库的循环回路）。
+        # inline（测试/调试）同步等结果；服务端模式后台跑，收车不被引擎阻塞。
+        engine_name = session.get("engine") or "fake"
+
+        def _distill_task() -> None:
+            try:
+                from tram import knowledge as kb_mod
+
+                kb_mod.distill(self.ctx, engine_name, by=f"close:{session_id}")
+            except Exception:  # noqa: BLE001 - 提炼失败不拦收车
+                pass
+
+        if self.inline:
+            _distill_task()
+        else:
+            threading.Thread(target=_distill_task, daemon=True).start()
+        result = self.get_session(session_id)  # type: ignore[assignment]
+        if result is not None:
+            result["distilling"] = True
+        return result  # type: ignore[return-value]
 
     def merge_session(self, session_id: str, by: str) -> dict:
         """并线：会话分支经 Guard 预检后合回主线——沙箱产出进项目文件的唯一正门.
@@ -548,6 +568,9 @@ class ChatService:
 
             self._finish(ctx, session_id, job, ws, result, by)
             self._collect_knowledge(ctx, session_id, task_id, message, job, ws)
+            from tram import knowledge as kb_mod
+
+            kb_mod.refresh_monitoring(ctx)  # 监控组文件随轮刷新（变更日志/进度报告）
         except RunnerUnavailableError as exc:
             job.status = "error"
             job.error = str(exc)
@@ -573,7 +596,7 @@ class ChatService:
             "closing": "收尾",
         }
         phase_label = group_labels.get(str(state.phase), str(state.phase))
-        return "\n".join(
+        body = "\n".join(
             [
                 "[Tram 治理上下文] 你是运行在 Tram（AI coding agent 治理层）管辖下的编码引擎。",
                 f"- 项目 {state.project_name} · 会话 {session['id']} · 任务 {task_id} ·"
@@ -591,6 +614,10 @@ class ChatService:
                 "回答时结合上述治理状态；用户说「回到某阶段」指的是 Tram 过程组。",
             ]
         )
+        kb = knowledge_digest(ctx)  # 护航知识库摘要：项目文件按需入上下文（循环回路）
+        if kb:
+            body += "\n[项目知识库摘要（各文件节选，全文在 .tram/knowledge/docs/）]\n" + kb
+        return body
 
     def _drive(self, engine, spec: TaskSpec, workspace: Path, job: ChatJob) -> RunResult:
         """流式优先：逐事件喂给 job.lines；无 stream 的 runner 走 run() 兜底。"""

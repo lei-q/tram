@@ -28,6 +28,15 @@ def _initialized(ctx):
     """create_app / ChatService 需要 .tram/ 已初始化（与 test_ui_api 同约定）。"""
 
 
+@pytest.fixture(autouse=True)
+def _fast_distill(monkeypatch):
+    """收车自动提炼换 FakeRunner——测试绝不摸真引擎（会话 engine 字段常是 claude）。"""
+    import tram.knowledge as kb
+    from tram.adapters.fake import FakeRunner
+
+    monkeypatch.setattr(kb, "_make_engine", lambda name: FakeRunner())
+
+
 # ---------- 适配器：会话旗标与二进制定位 ----------
 
 
